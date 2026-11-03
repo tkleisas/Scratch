@@ -10,6 +10,7 @@ data class DeckUiState(
     val durationMs: Long = 0L,
     val filterMode: Int = 0,
     val filterCutoff: Float = 0.5f,
+    val volume: Float = 1f,
     val bpm: Float = 0f,
     val eqNodes: List<EqNode> = EqNodes.defaults(),
     val eqBypassed: Boolean = false,

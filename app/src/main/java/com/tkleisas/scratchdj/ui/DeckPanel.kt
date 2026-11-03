@@ -60,6 +60,7 @@ import com.tkleisas.scratchdj.ui.theme.ScratchSurface
 import com.tkleisas.scratchdj.ui.theme.ScratchSurfaceRaised
 import java.util.Locale
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.min
 import kotlin.math.pow
@@ -231,12 +232,13 @@ fun DeckPanel(
                     TempoControl(
                         value = state.tempo,
                         keyLock = state.keyLock,
-                        canSync = state.bpm > 0f &&
-                            controller.deck(side.other()).value.bpm > 0f,
+                        canSync = state.track != null &&
+                            controller.deck(side.other()).value.track != null,
                         accent = accent,
                         onValueChange = { controller.setTempo(side, it) },
                         onToggleKeyLock = { controller.toggleKeyLock(side) },
                         onSync = { controller.syncToOtherDeck(side) },
+                        onReset = { controller.setTempo(side, 1f) },
                     )
 
                     LoopControl(
@@ -425,6 +427,7 @@ private fun TempoControl(
     onValueChange: (Float) -> Unit,
     onToggleKeyLock: () -> Unit,
     onSync: () -> Unit,
+    onReset: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -432,55 +435,85 @@ private fun TempoControl(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = "TEMPO",
                     color = ScratchOutline,
                     fontSize = 8.sp,
                     letterSpacing = 1.sp,
                 )
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(3.dp))
                 Text(
                     text = String.format(Locale.US, "%+.1f%%", (value - 1f) * 100f),
                     color = accent,
                     fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    onClick = onSync,
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TempoAction(
+                    label = "0",
+                    active = abs(value - 1f) > 0.001f,
+                    enabled = abs(value - 1f) > 0.001f,
+                    accent = accent,
+                    onClick = onReset,
+                )
+                TempoAction(
+                    label = "SYNC",
+                    active = canSync,
                     enabled = canSync,
-                    modifier = Modifier.height(18.dp),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                ) {
-                    Text(
-                        text = "SYNC",
-                        color = if (canSync) accent else ScratchOutline,
-                        fontSize = 7.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                TextButton(
+                    accent = accent,
+                    onClick = onSync,
+                )
+                TempoAction(
+                    label = "KEY",
+                    active = keyLock,
+                    accent = accent,
                     onClick = onToggleKeyLock,
-                    modifier = Modifier.height(18.dp),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
-                ) {
-                    Text(
-                        text = "KEY",
-                        color = if (keyLock) accent else ScratchOutline,
-                        fontSize = 7.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
+                )
             }
         }
+        Spacer(Modifier.height(24.dp))
         CompactSlider(
             value = value,
             onValueChange = onValueChange,
             accent = accent,
             valueRange = 0.5f..2f,
             bipolar = true,
+        )
+    }
+}
+
+
+@Composable
+private fun TempoAction(
+    label: String,
+    active: Boolean,
+    accent: Color,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .height(22.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 3.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = when {
+                !enabled -> ScratchOutline.copy(alpha = 0.45f)
+                active -> accent
+                else -> ScratchOutline
+            },
+            fontSize = 7.sp,
+            fontWeight = FontWeight.Bold,
         )
     }
 }

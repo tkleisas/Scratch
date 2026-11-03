@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.tkleisas.scratchdj"
     compileSdk = 36
+    ndkVersion = "27.2.12479018"
 
     defaultConfig {
         applicationId = "com.tkleisas.scratchdj"

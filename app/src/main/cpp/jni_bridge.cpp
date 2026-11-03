@@ -7,7 +7,11 @@
 #include <string>
 #include <vector>
 
+#ifdef SCRATCH_DESKTOP_AUDIO
+#include "AudioEngine.h"
+#else
 #include "audio/AudioEngine.h"
+#endif
 #include "audio/BpmAnalyzer.h"
 #include "audio/TrackLoader.h"
 

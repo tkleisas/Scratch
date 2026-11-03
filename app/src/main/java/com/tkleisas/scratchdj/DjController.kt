@@ -412,6 +412,13 @@ class DjController(private val context: Context) {
         DjEngine.seekFraction(side.index, fraction)
     }
 
+    fun setVolume(side: DeckSide, value: Float) {
+        val holder = deck(side)
+        val clamped = value.coerceIn(0f, 1.5f)
+        holder.value = holder.value.copy(volume = clamped)
+        DjEngine.setDeckGain(side.index, clamped)
+    }
+
     fun setFilterMode(side: DeckSide, mode: Int) {
         val holder = deck(side)
         holder.value = holder.value.copy(filterMode = mode)
@@ -672,6 +679,49 @@ class DjController(private val context: Context) {
     fun syncToOtherDeck(side: DeckSide) {
         val state = deck(side).value
         val other = deck(side.other()).value
+        if (state.track == null || other.track == null) {
+            message.value = "Load a track on both decks to sync"
+            return
+        }
+        if (state.bpm > 0f && other.bpm > 0f) {
+            applySync(side)
+            return
+        }
+
+        message.value = "Analyzing BPM for sync…"
+        scope.launch {
+            var thisBpm = state.bpm
+            var otherBpm = other.bpm
+            if (thisBpm <= 0f) {
+                thisBpm = withContext(Dispatchers.IO) {
+                    DjEngine.analyzeBpm(side.index, state.durationMs)
+                }
+            }
+            if (otherBpm <= 0f) {
+                otherBpm = withContext(Dispatchers.IO) {
+                    DjEngine.analyzeBpm(side.other().index, other.durationMs)
+                }
+            }
+
+            val holder = deck(side)
+            if (thisBpm > 0f && holder.value.track?.id == state.track?.id) {
+                holder.value = holder.value.copy(bpm = thisBpm)
+            }
+            val otherHolder = deck(side.other())
+            if (otherBpm > 0f && otherHolder.value.track?.id == other.track?.id) {
+                otherHolder.value = otherHolder.value.copy(bpm = otherBpm)
+            }
+            if (thisBpm > 0f && otherBpm > 0f) {
+                applySync(side)
+            } else {
+                message.value = "Could not detect BPM for both decks"
+            }
+        }
+    }
+
+    private fun applySync(side: DeckSide) {
+        val state = deck(side).value
+        val other = deck(side.other()).value
         val targetBpm = other.bpm * other.tempo
         val ratio = SyncMath.tempoRatio(state.bpm, targetBpm)
         if (ratio == null) {
@@ -679,9 +729,9 @@ class DjController(private val context: Context) {
             return
         }
         setTempo(side, ratio)
-        if (!state.keyLock) {
-            toggleKeyLock(side)
-        }
+        if (!state.keyLock) toggleKeyLock(side)
+        message.value = "Deck ${side.letter} synced to " +
+            String.format(java.util.Locale.US, "%.1f", targetBpm) + " BPM"
     }
 
     private fun analyzeBpm(side: DeckSide, track: Track, generation: Int) {

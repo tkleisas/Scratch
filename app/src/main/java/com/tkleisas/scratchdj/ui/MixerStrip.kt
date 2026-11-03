@@ -21,12 +21,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tkleisas.scratchdj.DjController
+import kotlin.math.roundToInt
 import com.tkleisas.scratchdj.ui.theme.DeckAccentA
 import com.tkleisas.scratchdj.ui.theme.DeckAccentB
 import com.tkleisas.scratchdj.ui.theme.ScratchOutline
@@ -51,6 +53,27 @@ fun MixerStrip(controller: DjController, modifier: Modifier = Modifier) {
                 fontWeight = FontWeight.Black,
                 letterSpacing = 3.sp,
             )
+
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "CHANNEL VOLUME",
+                    color = ScratchOutline,
+                    fontSize = 7.sp,
+                    letterSpacing = 1.sp,
+                )
+                VolumeRow(
+                    label = "A",
+                    value = controller.deckA.value.volume,
+                    accent = DeckAccentA,
+                    onValueChange = { controller.setVolume(com.tkleisas.scratchdj.model.DeckSide.A, it) },
+                )
+                VolumeRow(
+                    label = "B",
+                    value = controller.deckB.value.volume,
+                    accent = DeckAccentB,
+                    onValueChange = { controller.setVolume(com.tkleisas.scratchdj.model.DeckSide.B, it) },
+                )
+            }
 
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -100,31 +123,54 @@ fun MixerStrip(controller: DjController, modifier: Modifier = Modifier) {
                 )
                 SpectrumView(
                     bands = controller.spectrum.value,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    modifier = Modifier.fillMaxWidth().height(30.dp),
                 )
             }
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "${controller.latencyMs.intValue} ms",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace,
-                )
-                Text(
-                    text = "${controller.bufferFrames.intValue} fr · ${controller.sampleRate.intValue / 1000} kHz",
-                    color = ScratchOutline,
-                    fontSize = 8.sp,
-                    fontFamily = FontFamily.Monospace,
-                )
-                Text(
-                    text = "LATENCY",
-                    color = ScratchOutline,
-                    fontSize = 7.sp,
-                    letterSpacing = 1.sp,
-                )
-            }
+            Text(
+                text = "${controller.latencyMs.intValue} ms · " +
+                    "${controller.bufferFrames.intValue} fr · " +
+                    "${controller.sampleRate.intValue / 1000} kHz",
+                color = ScratchOutline,
+                fontSize = 7.sp,
+                fontFamily = FontFamily.Monospace,
+            )
         }
+    }
+}
+
+@Composable
+private fun VolumeRow(
+    label: String,
+    value: Float,
+    accent: Color,
+    onValueChange: (Float) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = "VOL $label",
+                color = accent,
+                fontSize = 7.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "${(value * 100f).roundToInt()}%",
+                color = ScratchOutline,
+                fontSize = 7.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        CompactSlider(
+            value = value,
+            onValueChange = onValueChange,
+            accent = accent,
+            valueRange = 0f..1.5f,
+            trackHeight = 18.dp,
+        )
     }
 }
 
