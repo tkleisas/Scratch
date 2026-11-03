@@ -4,7 +4,7 @@
 
 - **App name (max 30):** Scratch: Vinyl DJ
 - **Package name:** `com.tkleisas.scratchdj`
-- **Version:** 0.3.0 (versionCode 300000)
+- **Version:** 0.3.1 (versionCode 301000)
 - **Category:** Music & Audio
 - **Contact email:** tasos.kleisas@gmail.com
 - **Privacy policy:** https://tkleisas.github.io/scratch/privacy/
@@ -46,6 +46,6 @@ Android 10 or newer. A local music library is required. Headphones or speakers a
 
 Scratch is a Bokontep music project.
 
-## Release notes (v0.3.0)
+## Release notes (v0.3.1)
 
 First Play-ready release: dual vinyl decks, scratch/jog, tempo and key lock, BPM sync, graphical EQ, filters, loops, local library search, persistent queues, per-deck and master FX racks with punch pads, and next-track prefetch.
