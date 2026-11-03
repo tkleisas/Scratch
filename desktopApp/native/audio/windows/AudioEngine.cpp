@@ -57,7 +57,14 @@ bool AudioEngine::Start(std::string& error) {
     // build is present, SCRATCH_AUDIO_HOST=asio selects the default ASIO
     // device. WASAPI exclusive mode is attempted first for low latency.
     PaHostApiTypeId hostType = paWASAPI;
-    if (EnvEquals("SCRATCH_AUDIO_HOST", "asio")) {
+#if defined(SCRATCH_ASIO)
+    // The ASIO-enabled build prefers ASIO, then falls back to WASAPI below
+    // when no ASIO host/device is available.
+    hostType = paASIO;
+#endif
+    if (EnvEquals("SCRATCH_AUDIO_HOST", "wasapi")) {
+        hostType = paWASAPI;
+    } else if (EnvEquals("SCRATCH_AUDIO_HOST", "asio")) {
         hostType = paASIO;
     }
     PaHostApiIndex hostIndex = Pa_HostApiTypeIdToHostApiIndex(hostType);

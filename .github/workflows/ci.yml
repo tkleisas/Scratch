@@ -198,6 +198,24 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Build ASIO MSI
+        shell: pwsh
+        env:
+          JAVA_INCLUDE_PATH: ${{ env.JAVA_HOME }}/include
+          SCRATCH_ASIO: "1"
+        run: |
+          .\gradlew.bat :desktopApp:packageMsi --no-daemon --stacktrace
+          $msi = Get-ChildItem "desktopApp/build/compose/binaries/main/msi/*.msi" | Select-Object -First 1
+          Copy-Item $msi.FullName ($msi.FullName -replace '\.msi$', '-asio.msi')
+
+      - name: Upload ASIO MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: Scratch-windows-asio-msi
+          path: desktopApp/build/compose/binaries/main/msi/*-asio.msi
+          if-no-files-found: error
+          retention-days: 14
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [android, desktop, desktop-windows]
@@ -220,6 +238,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: Scratch-windows-msi
+          path: release
+
+      - name: Download ASIO Windows MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: Scratch-windows-asio-msi
           path: release
 
       - name: Rename artifacts

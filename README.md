@@ -54,7 +54,7 @@ This is an early development build, exercised on a physical Android 15 device an
 
 - Compose Multiplatform desktop UI with the same two-deck layout and controls as Android.
 - Linux uses a native ALSA engine at 48 kHz s16; Windows uses a native PortAudio backend with WASAPI exclusive mode and shared-mode fallback (48 kHz float, 256-frame default buffer).
-- Windows can optionally be built with ASIO support: `-Pscratch.asio=true` (or `SCRATCH_ASIO=1`). Set `SCRATCH_AUDIO_HOST=asio` at runtime to select the default ASIO device. ASIO is currently a build/runtime option; a device picker is still to come.
+- Windows is built in two flavors: the default MSI uses WASAPI exclusive/shared mode; the ASIO MSI enables PortAudio ASIO and prefers the default ASIO device, falling back to WASAPI when no ASIO driver is available. Build the ASIO flavor with `SCRATCH_ASIO=1` (or `-Pscratch.asio=true`). A device picker is still to come.
 - The same deck, scratch, tempo/key-lock, filter, EQ, loop, crossfader, volume, FX racks, and spectrum behavior is used on both desktops.
 - FFmpeg-backed decoding into a disk PCM cache (`~/.cache/scratch/pcm` on Linux, `%LOCALAPPDATA%\scratch\pcm` on Windows), including WAV/AIFF and compressed formats. FFmpeg must be installed or supplied via `SCRATCH_FFMPEG`.
 - Library folders are configurable in **Settings → Library Folders** and persisted with `java.util.prefs`; the default is `~/Music`.
