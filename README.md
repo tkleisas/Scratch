@@ -273,7 +273,8 @@ The MSI is written under `desktopApp/build/compose/binaries/main/msi/`.
 Optional ASIO support:
 
 ```powershell
-.\gradlew.bat :desktopApp:packageMsi -Pscratch.asio=true
+$env:SCRATCH_ASIO = "1"
+.\gradlew.bat :desktopApp:packageMsi
 ```
 
 PortAudio downloads the current ASIO SDK at configure time when ASIO is enabled. Steinberg now dual-licenses the ASIO SDK under GPLv3 or a proprietary license; Scratch is GPLv3, so the GPLv3 option is compatible. If ASIO is advertised, follow Steinberg's trademark/logo guidelines and include: “ASIO is a registered trademark of Steinberg Media Technologies GmbH.”

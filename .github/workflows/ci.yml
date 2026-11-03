@@ -186,8 +186,9 @@ jobs:
         shell: pwsh
         env:
           JAVA_INCLUDE_PATH: ${{ env.JAVA_HOME }}/include
+          SCRATCH_ASIO: "1"
         run: |
-          .\gradlew.bat :desktopApp:buildDesktopNative -Pscratch.asio=true --no-daemon --stacktrace
+          .\gradlew.bat :desktopApp:buildDesktopNative --no-daemon --stacktrace
 
       - name: Upload Windows MSI
         uses: actions/upload-artifact@v4
