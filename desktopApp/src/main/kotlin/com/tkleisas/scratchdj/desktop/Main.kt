@@ -4,6 +4,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -23,6 +24,7 @@ fun main() = application {
             exitApplication()
         },
         title = "Scratch ${AppInfo.VERSION}",
+        icon = painterResource("scratch.png"),
         state = rememberWindowState(width = 1_600.dp, height = 720.dp),
     ) {
         ScratchTheme {

@@ -105,6 +105,9 @@ compose.desktop {
             description = "Vinyl-first DJ app for Linux"
             vendor = "Tasos Kleisas"
             modules("java.prefs")
+            linux {
+                iconFile.set(project.file("src/main/resources/scratch.png"))
+            }
         }
     }
 }
