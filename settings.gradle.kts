@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Scratch"
 include(":app")
+include(":shared")
+include(":desktopApp")

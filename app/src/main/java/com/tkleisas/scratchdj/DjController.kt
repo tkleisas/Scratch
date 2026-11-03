@@ -13,11 +13,18 @@ import com.tkleisas.scratchdj.audio.SyncMath
 import com.tkleisas.scratchdj.audio.TrackTooLongException
 import com.tkleisas.scratchdj.data.AudioFormats
 import com.tkleisas.scratchdj.data.DeckQueue
+import com.tkleisas.scratchdj.data.EqPresetStore
 import com.tkleisas.scratchdj.data.LibraryRepository
+import com.tkleisas.scratchdj.data.QueuePresetData
+import com.tkleisas.scratchdj.data.QueuePresetStore
+import com.tkleisas.scratchdj.data.SettingsStore
+import com.tkleisas.scratchdj.data.QueuePresetSummary
 import com.tkleisas.scratchdj.data.Track
 import com.tkleisas.scratchdj.data.TrackDatabase
 import com.tkleisas.scratchdj.model.DeckSide
 import com.tkleisas.scratchdj.model.DeckUiState
+import com.tkleisas.scratchdj.model.EqPreset
+import com.tkleisas.scratchdj.model.EqPresetCodec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +42,9 @@ class DjController(private val context: Context) {
 
     private val database = TrackDatabase(context)
     private val repository = LibraryRepository(context, database)
+    private val presetStore = EqPresetStore(context)
+    private val queuePresetStore = QueuePresetStore(context)
+    private val settingsStore = SettingsStore(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val queueA = DeckQueue()
@@ -58,6 +68,11 @@ class DjController(private val context: Context) {
     val bufferFrames = mutableIntStateOf(0)
     val sampleRate = mutableIntStateOf(48000)
     val spectrum = mutableStateOf(FloatArray(32))
+    val eqPresetNames = mutableStateOf<List<String>>(emptyList())
+    val queuePresetSummaries = mutableStateOf<List<QueuePresetSummary>>(emptyList())
+    val autoplayA = mutableStateOf(settingsStore.autoplayA)
+    val autoplayB = mutableStateOf(settingsStore.autoplayB)
+    val crossfadeSeconds = mutableFloatStateOf(settingsStore.crossfadeSeconds)
 
     init {
         if (!DjEngine.start()) {
@@ -65,6 +80,14 @@ class DjController(private val context: Context) {
         }
         DjEngine.setCrossfader(crossfader.value)
         scope.launch(Dispatchers.IO) { PcmCache.prune(context) }
+        scope.launch(Dispatchers.IO) {
+            val names = presetStore.names()
+            withContext(Dispatchers.Main) { eqPresetNames.value = names }
+        }
+        scope.launch(Dispatchers.IO) {
+            val summaries = queuePresetStore.summaries()
+            withContext(Dispatchers.Main) { queuePresetSummaries.value = summaries }
+        }
         scope.launch { pollEngine() }
     }
 
@@ -111,9 +134,8 @@ class DjController(private val context: Context) {
 
         val state = deck(side).value
         if (state.track == null && !state.isLoading) {
-            val next = queue.takeNext() ?: return
-            publishQueue(side)
-            loadTrack(next, side)
+            queue.select(track.id)
+            loadTrack(track, side)
         }
     }
 
@@ -124,17 +146,15 @@ class DjController(private val context: Context) {
 
     fun playFromQueue(trackId: Long, side: DeckSide) {
         val queue = rawQueue(side)
-        val track = queue.snapshot().firstOrNull { it.id == trackId } ?: return
-        queue.remove(trackId)
+        val track = queue.select(trackId) ?: return
         publishQueue(side)
         loadTrack(track, side, autoPlay = true)
     }
 
     fun skipToNext(side: DeckSide) {
-        val queue = rawQueue(side)
-        val next = queue.takeNext()
+        val next = rawQueue(side).next()
         if (next == null) {
-            message.value = "Deck ${side.letter} queue is empty"
+            message.value = "No next track in Deck ${side.letter} queue"
             return
         }
         publishQueue(side)
@@ -142,17 +162,25 @@ class DjController(private val context: Context) {
     }
 
     fun previousTrack(side: DeckSide) {
+        val state = deck(side).value
+        val queue = rawQueue(side)
+        val previousInQueue = if (queue.current?.id == state.track?.id) {
+            queue.previous()
+        } else {
+            null
+        }
+        if (previousInQueue != null) {
+            publishQueue(side)
+            loadTrack(previousInQueue, side, autoPlay = state.isPlaying, recordHistory = false)
+            return
+        }
+
         val previous = history(side).removeLastOrNull()
         if (previous == null) {
             seekFraction(side, 0f)
             return
         }
-        loadTrack(
-            previous,
-            side,
-            autoPlay = deck(side).value.isPlaying,
-            recordHistory = false,
-        )
+        loadTrack(previous, side, autoPlay = state.isPlaying, recordHistory = false)
     }
 
     private fun loadTrack(
@@ -161,6 +189,7 @@ class DjController(private val context: Context) {
         autoPlay: Boolean = false,
         recordHistory: Boolean = true,
     ) {
+        rawQueue(side).select(track.id)
         val holder = deck(side)
         val current = holder.value.track
         val pushedHistory = recordHistory && current != null && current.id != track.id
@@ -332,11 +361,15 @@ class DjController(private val context: Context) {
             updateDeckState(DeckSide.A)
             updateDeckState(DeckSide.B)
 
-            if (DjEngine.consumeEnded(DeckSide.A.index) && !advanceQueue(DeckSide.A)) {
-                deckA.value = deckA.value.copy(isPlaying = false)
+            if (DjEngine.consumeEnded(DeckSide.A.index)) {
+                if (!autoplayA.value || !advanceQueue(DeckSide.A)) {
+                    deckA.value = deckA.value.copy(isPlaying = false)
+                }
             }
-            if (DjEngine.consumeEnded(DeckSide.B.index) && !advanceQueue(DeckSide.B)) {
-                deckB.value = deckB.value.copy(isPlaying = false)
+            if (DjEngine.consumeEnded(DeckSide.B.index)) {
+                if (!autoplayB.value || !advanceQueue(DeckSide.B)) {
+                    deckB.value = deckB.value.copy(isPlaying = false)
+                }
             }
 
             latencyMs.intValue = DjEngine.latencyMs()
@@ -361,8 +394,7 @@ class DjController(private val context: Context) {
     }
 
     private fun advanceQueue(side: DeckSide): Boolean {
-        val queue = rawQueue(side)
-        val next = queue.takeNext() ?: return false
+        val next = rawQueue(side).next() ?: return false
         publishQueue(side)
         loadTrack(next, side, autoPlay = true)
         return true
@@ -401,6 +433,141 @@ class DjController(private val context: Context) {
         DjEngine.setEqNode(side.index, index, node.frequency, node.gainDb, node.q)
     }
 
+    fun saveEqPreset(side: DeckSide, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) {
+            message.value = "Preset name is required"
+            return
+        }
+        val state = deck(side).value
+        val payload = EqPresetCodec.encode(state.eqNodes, state.eqBypassed)
+        scope.launch {
+            val names = withContext(Dispatchers.IO) {
+                presetStore.save(trimmed, payload)
+                presetStore.names()
+            }
+            eqPresetNames.value = names
+            message.value = "Saved preset “$trimmed”"
+        }
+    }
+
+    fun loadEqPreset(side: DeckSide, name: String) {
+        scope.launch {
+            val preset = withContext(Dispatchers.IO) {
+                presetStore.payload(name)?.let(EqPresetCodec::decode)
+            }
+            if (preset == null) {
+                message.value = "Could not load preset “$name”"
+                return@launch
+            }
+            applyEqPreset(side, preset)
+            message.value = "Loaded preset “$name”"
+        }
+    }
+
+    fun deleteEqPreset(name: String) {
+        scope.launch {
+            val names = withContext(Dispatchers.IO) {
+                presetStore.delete(name)
+                presetStore.names()
+            }
+            eqPresetNames.value = names
+        }
+    }
+
+    fun saveQueuePreset(name: String, presetScope: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) {
+            message.value = "Preset name is required"
+            return
+        }
+        val normalizedScope = presetScope.uppercase()
+        val deckA = if (normalizedScope == "A" || normalizedScope == "ALL") {
+            queueA.snapshot()
+        } else {
+            emptyList()
+        }
+        val deckB = if (normalizedScope == "B" || normalizedScope == "ALL") {
+            queueB.snapshot()
+        } else {
+            emptyList()
+        }
+        if (deckA.isEmpty() && deckB.isEmpty()) {
+            message.value = "Queue is empty"
+            return
+        }
+        scope.launch {
+            val summaries = withContext(Dispatchers.IO) {
+                queuePresetStore.save(trimmed, normalizedScope, deckA, deckB)
+                queuePresetStore.summaries()
+            }
+            queuePresetSummaries.value = summaries
+            message.value = "Saved queue preset “$trimmed”"
+        }
+    }
+
+    fun loadQueuePreset(name: String) {
+        scope.launch {
+            val data = withContext(Dispatchers.IO) { queuePresetStore.load(name) }
+            if (data == null) {
+                message.value = "Could not load queue preset “$name”"
+                return@launch
+            }
+            applyQueuePreset(data)
+            message.value = "Loaded queue preset “$name”"
+        }
+    }
+
+    fun deleteQueuePreset(name: String) {
+        scope.launch {
+            val summaries = withContext(Dispatchers.IO) {
+                queuePresetStore.delete(name)
+                queuePresetStore.summaries()
+            }
+            queuePresetSummaries.value = summaries
+        }
+    }
+
+    private fun applyQueuePreset(data: QueuePresetData) {
+        val sides = when (data.summary.scope) {
+            "A" -> listOf(DeckSide.A)
+            "B" -> listOf(DeckSide.B)
+            else -> listOf(DeckSide.A, DeckSide.B)
+        }
+        for (side in sides) {
+            val tracks = if (side == DeckSide.A) data.deckA else data.deckB
+            val queue = rawQueue(side)
+            queue.replaceAll(tracks)
+            val current = deck(side).value.track
+            if (current != null && tracks.any { it.id == current.id }) {
+                queue.select(current.id)
+            }
+            publishQueue(side)
+            if (deck(side).value.track == null && tracks.isNotEmpty()) {
+                val first = queue.next() ?: tracks.first()
+                loadTrack(first, side, autoPlay = false, recordHistory = false)
+            }
+        }
+    }
+
+    private fun applyEqPreset(side: DeckSide, preset: EqPreset) {
+        val holder = deck(side)
+        holder.value = holder.value.copy(
+            eqNodes = preset.nodes,
+            eqBypassed = preset.bypassed,
+        )
+        preset.nodes.forEachIndexed { index, node ->
+            DjEngine.setEqNode(side.index, index, node.frequency, node.gainDb, node.q)
+        }
+        DjEngine.setEqBypassed(side.index, preset.bypassed)
+    }
+
+    fun setEqBypassed(side: DeckSide, bypassed: Boolean) {
+        val holder = deck(side)
+        holder.value = holder.value.copy(eqBypassed = bypassed)
+        DjEngine.setEqBypassed(side.index, bypassed)
+    }
+
     fun flattenEq(side: DeckSide) {
         val holder = deck(side)
         val nodes = holder.value.eqNodes.map { it.copy(gainDb = 0f) }
@@ -427,8 +594,9 @@ class DjController(private val context: Context) {
         val holder = deck(side)
         val state = holder.value
         if (state.track == null) return
-        val hasPoints = state.loopIn != null && state.loopOut != null &&
-            state.loopOut!! > state.loopIn
+        val loopIn = state.loopIn
+        val loopOut = state.loopOut
+        val hasPoints = loopIn != null && loopOut != null && loopOut > loopIn
         if (!hasPoints) {
             val (start, end) = defaultLoop(state)
             applyLoop(side, start, end, enabled = true)
@@ -537,6 +705,22 @@ class DjController(private val context: Context) {
         }
     }
 
+    fun setAutoplay(side: DeckSide, enabled: Boolean) {
+        if (side == DeckSide.A) {
+            autoplayA.value = enabled
+            settingsStore.autoplayA = enabled
+        } else {
+            autoplayB.value = enabled
+            settingsStore.autoplayB = enabled
+        }
+    }
+
+    fun setCrossfadeSeconds(value: Float) {
+        val clamped = value.coerceIn(0f, 12f)
+        crossfadeSeconds.floatValue = clamped
+        settingsStore.crossfadeSeconds = clamped
+    }
+
     fun setCrossfader(value: Float) {
         crossfader.floatValue = value
         DjEngine.setCrossfader(value)
@@ -560,6 +744,8 @@ class DjController(private val context: Context) {
         scope.cancel()
         DjEngine.shutdown()
         database.close()
+        presetStore.close()
+        queuePresetStore.close()
     }
 
     private sealed interface LoadResult {

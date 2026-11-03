@@ -31,6 +31,8 @@ object DjEngine {
     fun setEqNode(deck: Int, index: Int, frequency: Float, gainDb: Float, q: Float) =
         nativeSetEqNode(deck, index, frequency, gainDb, q)
 
+    fun setEqBypassed(deck: Int, bypassed: Boolean) = nativeSetEqBypassed(deck, bypassed)
+
     fun eqResponse(deck: Int, count: Int): FloatArray = nativeGetEqResponse(deck, count)
     fun eqSpectra(deck: Int, count: Int): FloatArray = nativeGetEqSpectra(deck, count)
     fun setTempo(deck: Int, value: Float) = nativeSetTempo(deck, value)
@@ -69,6 +71,8 @@ object DjEngine {
     private external fun nativeSetDeckGain(deck: Int, value: Float)
     private external fun nativeSetFilterMode(deck: Int, mode: Int)
     private external fun nativeSetFilterCutoff(deck: Int, value: Float)
+    private external fun nativeSetEqBypassed(deck: Int, bypassed: Boolean)
+
     private external fun nativeSetEqNode(
         deck: Int,
         index: Int,

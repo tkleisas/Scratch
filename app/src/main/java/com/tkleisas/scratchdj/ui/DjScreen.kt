@@ -51,13 +51,15 @@ fun DjScreen(controller: DjController) {
     var searchOpen by remember { mutableStateOf(false) }
     var queueSide by remember { mutableStateOf<DeckSide?>(null) }
     var eqSide by remember { mutableStateOf<DeckSide?>(null) }
+    var settingsOpen by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val message = controller.message.value
 
-    BackHandler(enabled = searchOpen || queueSide != null || eqSide != null) {
+    BackHandler(enabled = searchOpen || queueSide != null || eqSide != null || settingsOpen) {
         searchOpen = false
         queueSide = null
         eqSide = null
+        settingsOpen = false
     }
 
     LaunchedEffect(message) {
@@ -85,7 +87,14 @@ fun DjScreen(controller: DjController) {
                     onSearch = {
                         queueSide = null
                         eqSide = null
+                        settingsOpen = false
                         searchOpen = true
+                    },
+                    onSettings = {
+                        searchOpen = false
+                        queueSide = null
+                        eqSide = null
+                        settingsOpen = true
                     },
                 )
                 Row(
@@ -99,6 +108,7 @@ fun DjScreen(controller: DjController) {
                         onOpenEq = {
                             searchOpen = false
                             queueSide = null
+                            settingsOpen = false
                             eqSide = DeckSide.A
                         },
                     )
@@ -110,6 +120,7 @@ fun DjScreen(controller: DjController) {
                         onOpenEq = {
                             searchOpen = false
                             queueSide = null
+                            settingsOpen = false
                             eqSide = DeckSide.B
                         },
                     )
@@ -125,6 +136,7 @@ fun DjScreen(controller: DjController) {
                         onClick = {
                             searchOpen = false
                             eqSide = null
+                            settingsOpen = false
                             queueSide = DeckSide.A
                         },
                     )
@@ -135,6 +147,7 @@ fun DjScreen(controller: DjController) {
                         onClick = {
                             searchOpen = false
                             eqSide = null
+                            settingsOpen = false
                             queueSide = DeckSide.B
                         },
                     )
@@ -151,11 +164,18 @@ fun DjScreen(controller: DjController) {
         eqSide?.let { side ->
             EqOverlay(controller, side, onDismiss = { eqSide = null })
         }
+        if (settingsOpen) {
+            SettingsOverlay(controller, onDismiss = { settingsOpen = false })
+        }
     }
 }
 
 @Composable
-private fun TopBar(controller: DjController, onSearch: () -> Unit) {
+private fun TopBar(
+    controller: DjController,
+    onSearch: () -> Unit,
+    onSettings: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().height(29.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -192,6 +212,13 @@ private fun TopBar(controller: DjController, onSearch: () -> Unit) {
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
         ) {
             Text("SEARCH + QUEUE", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+        TextButton(
+            onClick = onSettings,
+            modifier = Modifier.height(27.dp),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+        ) {
+            Text("SETTINGS", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         TextButton(
             onClick = { controller.syncLibrary() },

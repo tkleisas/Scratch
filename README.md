@@ -6,6 +6,8 @@ Scratch is a vinyl-first two-deck DJ app for Android. It is built with Kotlin an
 
 ![Graphical EQ with pre/post spectra](docs/eq.png)
 
+![Persisted autoplay and crossfade settings](docs/settings.png)
+
 ## Status
 
 This is an early development build, exercised on a physical Android 15 device. The core two-deck engine, scratching, MP3/FLAC/OGG decoding, tempo/key lock, filters, loops, SQLite library, search, and queues are working.
@@ -24,7 +26,7 @@ This is an early development build, exercised on a physical Android 15 device. T
 - When paused, the platter acts as a jog wheel: it moves the playhead silently.
 - Tempo slider (50%–200%) with optional key lock. Key lock uses WSOLA time-stretching; without key lock, tempo changes repitch the track like a turntable.
 - Per-deck filter with explicit LP / OFF / HP buttons and a logarithmic 20 Hz–20 kHz cutoff slider. Center OFF is a true bypass.
-- Per-deck 8-node graphical EQ: draggable low shelf, six peaks, and high shelf, each up to ±18 dB, with per-node Q. The editor draws the live magnitude curve plus pre-EQ and post-EQ spectra. EQ runs before the DJ filter.
+- Per-deck 8-node graphical EQ: draggable low shelf, six peaks, and high shelf, each up to ±18 dB, with per-node Q. The editor draws the live magnitude curve plus pre-EQ and post-EQ spectra. FLAT resets gains, BYPASS removes the EQ from the chain while preserving settings, and named presets are saved to SQLite and can be loaded on either deck. EQ runs before the DJ filter.
 - Master 32-band logarithmic spectrum analyzer in the mixer strip, fed from the final mixed output.
 - Equal-power crossfader.
 - Per-deck transport: PREV, PLAY/PAUSE, NEXT. NEXT pulls from the deck queue; PREV uses per-deck play history.
@@ -34,7 +36,9 @@ This is an early development build, exercised on a physical Android 15 device. T
 - Waveforms computed from 2048 peak buckets at load and normalized for display.
 - Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards.
 - Search overlay with one-tap add to Deck A or Deck B queues.
-- Per-deck queue overlays, auto-load when an empty deck receives a track, and auto-advance at track end.
+- Per-deck queues are persistent playlists with a cursor: playing a track no longer removes it, and PREV/NEXT move backward/forward through the queue. The current track is highlighted in the queue overlay.
+- Queue lists can be saved as named presets (Deck A, Deck B, or A+B) in SQLite and reloaded later. Loading A-only or B-only preserves the other deck’s queue.
+- Settings screen with persisted Autoplay Deck A and Autoplay Deck B toggles, plus a persisted crossfade-duration value. Autoplay controls whether the deck advances to the next queued track at the end.
 - Tap the waveform to seek.
 
 ### Known limitations
@@ -44,6 +48,7 @@ This is an early development build, exercised on a physical Android 15 device. T
 - BPM is analyzed the first time a track is loaded, not as a full library pre-analysis pass yet. Tempo SYNC does not phase/downbeat-align decks yet; beatgrid sync is next.
 - Cue points, hot cues, and slip mode are not implemented.
 - No audio focus, foreground playback service, or notification controls yet.
+- True overlapping crossfade is not implemented yet; the crossfade duration is persisted, but it needs a second playback source per deck. Autoplay currently advances with the deck’s normal fade-in.
 - Reported latency on the test phone varies between roughly 40–125 ms depending on the callback; Bluetooth output is not suitable for DJ use.
 - The search keyboard floats over the results on some IMEs; the A/B queue buttons are deliberately kept on the left so they stay reachable.
 
@@ -60,6 +65,7 @@ This is an early development build, exercised on a physical Android 15 device. T
 | FILTER slider | Cutoff from 20 Hz to 20 kHz, logarithmic. |
 | EQ | Open the graphical EQ editor; drag nodes for frequency/gain, select a peak for Q, FLAT resets gains. |
 | Spectrum | Master mix spectrum in the mixer; pre/post deck spectra in the EQ editor. |
+| SETTINGS | Autoplay A/B and crossfade-duration settings; persisted across launches. |
 | TEMPO | 50%–200% playback rate. |
 | SYNC | Match the other deck’s effective BPM and enable key lock. |
 | KEY | Enables WSOLA key lock; tempo changes no longer repitch. |
@@ -68,7 +74,7 @@ This is an early development build, exercised on a physical Android 15 device. T
 | CLR | Clears loop points and disables looping. |
 | CROSSFADER | Equal-power mix between Deck A and B. |
 | SEARCH + QUEUE | Search the SQLite index and add results to either deck queue. |
-| Queue bar | Open a deck queue; play or remove queued tracks. |
+| Queue bar | Open a deck queue; play or remove tracks, navigate with PREV/NEXT, and save/load A, B, or A+B queue presets. |
 
 ## Architecture
 
@@ -79,6 +85,8 @@ app/src/main/java/com/tkleisas/scratchdj/
   audio/DjEngine.kt        JNI facade
   audio/PcmDecoder.kt      MediaExtractor/MediaCodec decode
   audio/PcmCache.kt        Disk-backed PCM cache and pruning
+  data/SettingsStore.kt    Persisted autoplay/crossfade settings
+  data/QueuePresetStore.kt SQLite queue-list presets
   audio/SyncMath.kt        Tempo-sync ratio math
   data/                    MediaStore scan, SQLite DB, repository, queue
   model/                   DeckSide, DeckUiState
@@ -121,7 +129,7 @@ Title and artist are indexed, and search uses `LIKE ... ESCAPE '\'` with user wi
 
 ## Reused DSP
 
-The `app/src/main/cpp/third_party/yawn/` directory contains code copied from the local YAWN project (MIT licensed, same author):
+The `app/src/main/cpp/third_party/yawn/` directory contains code copied from [YAWN](https://github.com/tkleisas/yawn) (MIT licensed, same author):
 
 - `audio/TimeStretcher.{h,cpp}` — WSOLA, phase vocoder, and PGHI time-stretching. Scratch uses WSOLA for key lock.
 - `audio/TransientDetector.{h,cpp}` — onset/transient detection and BPM estimation, ready for import-time analysis.
@@ -166,7 +174,7 @@ export JAVA_HOME="$HOME/Apps/android-studio/jbr"
 
 This project is developed test-first where the code allows it.
 
-Native DSP and file parsing (49 GoogleTest cases):
+Native DSP and file parsing (50 GoogleTest cases):
 
 ```bash
 cmake -S app/src/test/cpp -B build/native-tests -DCMAKE_BUILD_TYPE=Debug
@@ -174,23 +182,23 @@ cmake --build build/native-tests -j
 ctest --test-dir build/native-tests --output-on-failure
 ```
 
-The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation and response curves, loop wrapping, crossfader law, BPM detection, spectrum band mapping, and the vendored YAWN time-stretcher/transient detector.
+The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation, bypass and response curves, loop wrapping, crossfader law, BPM detection, spectrum band mapping, and the vendored YAWN time-stretcher/transient detector.
 
-JVM unit tests (25 JUnit cases):
+JVM unit tests (31 JUnit cases):
 
 ```bash
 ./gradlew testDebugUnitTest
 ```
 
-Covers scratch angular-velocity math, format detection, queue ordering, SQL LIKE escaping, time formatting, and tempo-sync ratios.
+Covers scratch angular-velocity math, format detection, persistent queue navigation, SQL LIKE escaping, time formatting, tempo-sync ratios, and EQ preset serialization.
 
-Device tests (12 cases, real device or emulator):
+Device tests (18 cases, real device or emulator):
 
 ```bash
 ./gradlew connectedDebugAndroidTest
 ```
 
-Covers SQLite search/escaping/limits/BPM persistence and the MediaCodec MP3 decode, in-memory and disk-cache decoding, mmap-backed JNI loading, waveform generation, and native BPM analysis. Note that `connectedDebugAndroidTest` may uninstall the app when it finishes; reinstall the debug APK afterwards.
+Covers SQLite track search/BPM/EQ/queue preset persistence, SharedPreferences settings persistence, the MediaCodec MP3 decode, in-memory and disk-cache decoding, mmap-backed JNI loading, waveform generation, and native BPM analysis. Note that `connectedDebugAndroidTest` may uninstall the app when it finishes; reinstall the debug APK afterwards.
 
 ## Roadmap
 
@@ -201,20 +209,36 @@ Covers SQLite search/escaping/limits/BPM persistence and the MediaCodec MP3 deco
 5. Master limiter, vinyl wow/flutter, and better anti-aliasing at extreme scratch rates.
 6. Latency measurement and device-specific audio tuning.
 
-## Desktop Linux (planned)
+## Desktop Linux (in progress)
 
 The chosen direction is Compose Multiplatform so the UI can be shared:
 
 ```
-:shared          commonMain Compose UI, models, queues, sync logic
-:androidApp      MediaStore, MediaCodec, Oboe
-:desktopApp      filesystem library, FFmpeg, JACK/PipeWire
+:shared          KMP domain models, queues, sync/scratch math, EQ definitions
+:androidApp      Android UI, MediaStore, MediaCodec, Oboe
+:desktopApp      Compose Desktop scaffold (Linux)
 :audio-native    shared C++ engine + JNI for Android and Linux
 ```
 
-Portable today: the native DSP (deck transport, scratch, loops, EQ, filters, key lock, BPM, spectrum, mmap PCM), the Compose Canvas visuals, and the host test suite. Platform-specific pieces that will need `expect/actual` implementations: library scanning, SQLite, cache directories, permissions, window/fullscreen behavior, text input, and the audio backend. On Linux, JACK (or PipeWire’s JACK compatibility) is the preferred output path, with ALSA as a fallback; FFmpeg will replace MediaCodec for decoding into the same PCM cache format. Packaging is planned via jpackage/AppImage/Flatpak.
+A first KMP scaffold is in place: pure Kotlin domain logic now lives in `:shared` for the Android and JVM/desktop targets, and `:desktopApp` compiles a minimal Compose Desktop window. The next steps are moving the Compose deck UI into a shared module, adding a JACK/PipeWire audio backend, and replacing MediaCodec with FFmpeg on Linux, writing to the same PCM cache format. Packaging is planned via jpackage/AppImage/Flatpak.
 
-No desktop code has been added yet.
+## Versioning
+
+Versions are derived from annotated git tags of the form `vX.Y.Z`:
+
+- Exact tag: `versionName = X.Y.Z`
+- Commits after the tag: `X.Y.Z+N.gHASH`, where `N` is commits since the tag
+- Dirty working tree: appends `.dirty` build metadata
+- `versionCode = major*10,000,000 + minor*100,000 + patch*1,000 + min(commitsSinceTag, 999)`
+
+The version is shown in the Settings screen and used by both the Android and desktop builds. The first release is tagged `v0.1.0`.
+
+To cut a release:
+
+```bash
+git tag -a v0.1.1 -m "Scratch v0.1.1"
+git push origin v0.1.1
+```
 
 ## License
 

@@ -136,8 +136,12 @@ fun DeckPanel(
                     contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
                 ) {
                     Text(
-                        text = "EQ",
-                        color = if (eqActive) accent else ScratchOutline,
+                        text = if (state.eqBypassed) "BYP" else "EQ",
+                        color = when {
+                            state.eqBypassed -> accent.copy(alpha = 0.6f)
+                            eqActive -> accent
+                            else -> ScratchOutline
+                        },
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
                     )
@@ -154,7 +158,7 @@ fun DeckPanel(
                     fontFamily = FontFamily.Monospace,
                 )
                 Text(
-                    text = "$queued QUEUED",
+                    text = "$queued IN QUEUE",
                     color = accent.copy(alpha = 0.8f),
                     fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace,

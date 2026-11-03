@@ -303,6 +303,23 @@ TEST(Deck, EqHighCutAttenuatesTreble) {
     EXPECT_LT(filtered, dry * 0.5);
 }
 
+TEST(Deck, EqBypassSkipsProcessing) {
+    Deck eqDeck;
+    Deck bypassDeck;
+    eqDeck.SetTrack(MakeSineTrack(48000 * 3, 48000, 1000.0));
+    bypassDeck.SetTrack(MakeSineTrack(48000 * 3, 48000, 1000.0));
+    eqDeck.SetPlaying(true);
+    bypassDeck.SetPlaying(true);
+    eqDeck.SetEqNode(3, EqNormForHz(1000.0f), -12.0f, 1.0f);
+    bypassDeck.SetEqNode(3, EqNormForHz(1000.0f), -12.0f, 1.0f);
+    bypassDeck.SetEqBypassed(true);
+
+    const double filtered = RenderEnergy(eqDeck, 67, 512, 48000);
+    const double bypassed = RenderEnergy(bypassDeck, 67, 512, 48000);
+
+    EXPECT_GT(bypassed, filtered * 1.5);
+}
+
 TEST(Deck, EqResponseShowsBoostedNode) {
     Deck deck;
     deck.SetEqNode(3, EqNormForHz(1000.0f), 12.0f, 1.0f);

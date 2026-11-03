@@ -83,6 +83,8 @@ fun SearchOverlay(controller: DjController, onDismiss: () -> Unit) {
         modifier = Modifier.fillMaxSize(),
         color = ScratchBackground,
     ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+        TouchBlocker()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -175,6 +177,7 @@ fun SearchOverlay(controller: DjController, onDismiss: () -> Unit) {
                 color = ScratchOutline,
                 fontSize = 8.sp,
             )
+        }
         }
     }
 }

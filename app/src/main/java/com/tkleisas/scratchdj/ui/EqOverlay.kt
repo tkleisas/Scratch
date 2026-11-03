@@ -2,6 +2,7 @@ package com.tkleisas.scratchdj.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -14,12 +15,20 @@ import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,6 +82,10 @@ fun EqOverlay(controller: DjController, side: DeckSide, onDismiss: () -> Unit) {
     val accent = deckAccent(side)
     var selectedNode by remember { mutableIntStateOf(3) }
     var spectra by remember(side) { mutableStateOf(FloatArray(SPECTRUM_BANDS * 2)) }
+    var showSave by remember { mutableStateOf(false) }
+    var showLoad by remember { mutableStateOf(false) }
+    var presetName by remember { mutableStateOf("") }
+    var status by remember { mutableStateOf<String?>(null) }
 
     val curve = remember(state.eqNodes) {
         DjEngine.eqResponse(side.index, RESPONSE_POINTS)
@@ -85,9 +98,18 @@ fun EqOverlay(controller: DjController, side: DeckSide, onDismiss: () -> Unit) {
         }
     }
 
+    LaunchedEffect(status) {
+        if (status != null) {
+            delay(1800)
+            status = null
+        }
+    }
+
     val selected = state.eqNodes.getOrNull(selectedNode) ?: state.eqNodes.first()
 
     Surface(modifier = Modifier.fillMaxSize(), color = ScratchBackground) {
+        Box(modifier = Modifier.fillMaxSize()) {
+        TouchBlocker()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -117,17 +139,45 @@ fun EqOverlay(controller: DjController, side: DeckSide, onDismiss: () -> Unit) {
                     fontWeight = FontWeight.Black,
                     letterSpacing = 2.sp,
                 )
+                if (status != null) {
+                    Text(
+                        text = status.orEmpty(),
+                        color = accent,
+                        fontSize = 8.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 LegendDot(Color(PRE_COLOR), "PRE")
                 LegendDot(accent, "POST")
                 LegendDot(Color(EQ_CURVE_COLOR), "CURVE")
-                TextButton(
+                EqHeaderButton(
+                    label = if (state.eqBypassed) "BYPASSED" else "BYPASS",
+                    active = state.eqBypassed,
+                    accent = accent,
+                    onClick = { controller.setEqBypassed(side, !state.eqBypassed) },
+                )
+                EqHeaderButton(
+                    label = "FLAT",
+                    active = false,
+                    accent = accent,
                     onClick = { controller.flattenEq(side) },
-                    modifier = Modifier.height(26.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                ) {
-                    Text("FLAT", color = ScratchOutline, fontSize = 9.sp)
-                }
+                )
+                EqHeaderButton(
+                    label = "SAVE",
+                    active = false,
+                    accent = accent,
+                    onClick = {
+                        presetName = ""
+                        showSave = true
+                    },
+                )
+                EqHeaderButton(
+                    label = "LOAD",
+                    active = false,
+                    accent = accent,
+                    onClick = { showLoad = true },
+                )
                 TextButton(
                     onClick = onDismiss,
                     modifier = Modifier.height(26.dp),
@@ -144,6 +194,7 @@ fun EqOverlay(controller: DjController, side: DeckSide, onDismiss: () -> Unit) {
                 spectra = spectra,
                 selected = selectedNode,
                 accent = accent,
+                bypassed = state.eqBypassed,
                 onSelect = { selectedNode = it },
                 onNodeChange = { index, node ->
                     controller.setEqNode(side, index, node)
@@ -223,6 +274,209 @@ fun EqOverlay(controller: DjController, side: DeckSide, onDismiss: () -> Unit) {
                 }
             }
         }
+
+        if (showSave) {
+            SavePresetPanel(
+                name = presetName,
+                onNameChange = { presetName = it },
+                onSave = {
+                    val trimmed = presetName.trim()
+                    if (trimmed.isNotEmpty()) {
+                        controller.saveEqPreset(side, trimmed)
+                        status = "Saved preset “$trimmed”"
+                        showSave = false
+                    }
+                },
+                onDismiss = { showSave = false },
+                accent = accent,
+            )
+        }
+        if (showLoad) {
+            LoadPresetPanel(
+                names = controller.eqPresetNames.value,
+                onLoad = { name ->
+                    controller.loadEqPreset(side, name)
+                    status = "Loaded preset “$name”"
+                    showLoad = false
+                },
+                onDelete = { controller.deleteEqPreset(it) },
+                onDismiss = { showLoad = false },
+                accent = accent,
+            )
+        }
+        }
+    }
+}
+
+@Composable
+private fun EqHeaderButton(
+    label: String,
+    active: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .height(24.dp)
+            .background(
+                if (active) accent.copy(alpha = 0.18f) else Color.Transparent,
+                RoundedCornerShape(4.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 7.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = if (active) accent else ScratchOutline,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun SavePresetPanel(
+    name: String,
+    onNameChange: (String) -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit,
+    accent: Color,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f))
+            .imePadding(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier.width(430.dp),
+            shape = RoundedCornerShape(14.dp),
+            color = ScratchSurfaceRaised,
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "SAVE EQ PRESET",
+                    color = accent,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = onNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = {
+                        Text("Preset name", color = ScratchOutline, fontSize = 11.sp)
+                    },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = accent,
+                        unfocusedBorderColor = ScratchOutline.copy(alpha = 0.4f),
+                    ),
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("CANCEL", color = ScratchOutline, fontSize = 9.sp)
+                    }
+                    Button(
+                        onClick = onSave,
+                        enabled = name.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = accent,
+                            contentColor = Color(0xFF0A0C0F),
+                        ),
+                    ) {
+                        Text("SAVE", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LoadPresetPanel(
+    names: List<String>,
+    onLoad: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit,
+    accent: Color,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier.width(470.dp),
+            shape = RoundedCornerShape(14.dp),
+            color = ScratchSurfaceRaised,
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "LOAD EQ PRESET",
+                        color = accent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) {
+                        Text("CLOSE", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (names.isEmpty()) {
+                    Text(
+                        text = "No presets saved yet.",
+                        color = ScratchOutline,
+                        fontSize = 10.sp,
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                        items(names) { preset ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = preset,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(
+                                    onClick = { onLoad(preset) },
+                                    modifier = Modifier.height(26.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp),
+                                ) {
+                                    Text("LOAD", color = accent, fontSize = 9.sp)
+                                }
+                                TextButton(
+                                    onClick = { onDelete(preset) },
+                                    modifier = Modifier.height(26.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp),
+                                ) {
+                                    Text("DELETE", color = ScratchOutline, fontSize = 9.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -247,6 +501,7 @@ private fun EqGraph(
     spectra: FloatArray,
     selected: Int,
     accent: Color,
+    bypassed: Boolean,
     onSelect: (Int) -> Unit,
     onNodeChange: (Int, EqNode) -> Unit,
     modifier: Modifier = Modifier,
@@ -422,8 +677,21 @@ private fun EqGraph(
                 }
                 drawPath(
                     path,
-                    curveColor.copy(alpha = 0.95f),
+                    curveColor.copy(alpha = if (bypassed) 0.28f else 0.95f),
                     style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
+                )
+            }
+
+            if (bypassed) {
+                drawText(
+                    textMeasurer = textMeasurer,
+                    text = "BYPASSED",
+                    topLeft = Offset(right - 62.dp.toPx(), top + 2.dp.toPx()),
+                    style = TextStyle(
+                        color = accent.copy(alpha = 0.85f),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
                 )
             }
 

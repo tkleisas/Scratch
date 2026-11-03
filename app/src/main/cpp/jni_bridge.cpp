@@ -345,6 +345,18 @@ Java_com_tkleisas_scratchdj_audio_DjEngine_nativeSetEqNode(JNIEnv*, jobject, jin
     }
 }
 
+JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeSetEqBypassed(JNIEnv*, jobject, jint deck,
+                                                              jboolean bypassed) {
+    if (!ValidDeck(deck)) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gEngine) {
+        gEngine->GetDeck(deck).SetEqBypassed(bypassed == JNI_TRUE);
+    }
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetEqResponse(JNIEnv* env, jobject, jint deck,
                                                               jint count) {

@@ -33,6 +33,7 @@ public:
     void SetFilterMode(int mode);
     void SetFilterCutoff(float normalizedCutoff);
     void SetEqNode(int index, float frequencyNorm, float gainDb, float q);
+    void SetEqBypassed(bool bypassed);
     void GetEqResponse(float* out, int count) const;
     void GetEqSpectra(float* pre, float* post, int count) const;
     void SetTempo(float ratio);
@@ -89,6 +90,7 @@ private:
     std::atomic<float> eqGain_[kEqNodeCount];
     std::atomic<float> eqQ_[kEqNodeCount];
     std::atomic<int> eqSampleRate_{48000};
+    std::atomic<bool> eqBypassed_{false};
     std::atomic<float> tempo_{1.0f};
     std::atomic<bool> keyLock_{false};
     std::atomic<bool> loopEnabled_{false};

@@ -209,6 +209,10 @@ void Deck::SetEqNode(int index, float frequencyNorm, float gainDb, float q) {
     eqQ_[index].store(std::clamp(q, 0.3f, 4.0f), std::memory_order_relaxed);
 }
 
+void Deck::SetEqBypassed(bool bypassed) {
+    eqBypassed_.store(bypassed, std::memory_order_relaxed);
+}
+
 void Deck::SetLoopEnabled(bool enabled) {
     const bool valid = loopEndFrames_.load(std::memory_order_relaxed) >
                        loopStartFrames_.load(std::memory_order_relaxed);
@@ -420,6 +424,14 @@ void Deck::Render(float* interleavedStereoOut, int32_t frames, float mixGain,
 
 void Deck::UpdateEq(int outputSampleRate) {
     eqSampleRate_.store(outputSampleRate, std::memory_order_relaxed);
+    if (eqBypassed_.load(std::memory_order_relaxed)) {
+        for (int i = 0; i < kEqNodeCount; ++i) {
+            eqNodeActive_[i] = false;
+            eqLeft_[i].reset();
+            eqRight_[i].reset();
+        }
+        return;
+    }
     const double sampleRate = static_cast<double>(outputSampleRate);
     for (int i = 0; i < kEqNodeCount; ++i) {
         const float gain = eqGain_[i].load(std::memory_order_relaxed);
