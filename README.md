@@ -50,11 +50,13 @@ This is an early development build, exercised on a physical Android 15 device an
 - Settings screen with persisted Autoplay Deck A and Autoplay Deck B toggles, plus a persisted crossfade-duration value. Autoplay controls whether the deck advances to the next queued track at the end.
 - Tap the waveform to seek.
 
-### Desktop (Linux)
+### Desktop (Linux / Windows)
 
 - Compose Multiplatform desktop UI with the same two-deck layout and controls as Android.
-- Native ALSA playback engine (48 kHz, s16) with the same deck, scratch, tempo/key-lock, filter, EQ, loop, crossfader, volume, FX racks, and spectrum behavior.
-- FFmpeg-backed decoding into a disk PCM cache at `~/.cache/scratch/pcm`, including WAV/AIFF and compressed formats.
+- Linux uses a native ALSA engine at 48 kHz s16; Windows uses a native PortAudio backend with WASAPI exclusive mode and shared-mode fallback (48 kHz float, 256-frame default buffer).
+- Windows can optionally be built with ASIO support: `-Pscratch.asio=true` (or `SCRATCH_ASIO=1`). Set `SCRATCH_AUDIO_HOST=asio` at runtime to select the default ASIO device. ASIO is currently a build/runtime option; a device picker is still to come.
+- The same deck, scratch, tempo/key-lock, filter, EQ, loop, crossfader, volume, FX racks, and spectrum behavior is used on both desktops.
+- FFmpeg-backed decoding into a disk PCM cache (`~/.cache/scratch/pcm` on Linux, `%LOCALAPPDATA%\scratch\pcm` on Windows), including WAV/AIFF and compressed formats. FFmpeg must be installed or supplied via `SCRATCH_FFMPEG`.
 - Library folders are configurable in **Settings → Library Folders** and persisted with `java.util.prefs`; the default is `~/Music`.
 - Desktop EQ and queue presets persist in `~/.config/scratch/presets.bin`.
 - Debian package builds with the native engine bundled into app resources and extracted/loaded at runtime; an AppImage target is configured but not yet exercised in CI.
@@ -257,6 +259,24 @@ export JAVA_INCLUDE_PATH="$JAVA_HOME/include"
 ```
 
 `JAVA_INCLUDE_PATH` must point at a directory containing `jni.h`; Android Studio's JBR may not include it. If it is not under `$JAVA_HOME/include`, pass `-PjniInclude=/path/to/jdk/include`. Set `JAVA_HOME` to a full JDK 17 installation for `jpackage`.
+
+### Windows build
+
+Windows builds require JDK 17, CMake, Visual Studio Build Tools (C++), and FFmpeg in `PATH` (or `SCRATCH_FFMPEG`). From a Windows shell:
+
+```powershell
+.\gradlew.bat :desktopApp:test :desktopApp:packageMsi
+```
+
+The MSI is written under `desktopApp/build/compose/binaries/main/msi/`.
+
+Optional ASIO support:
+
+```powershell
+.\gradlew.bat :desktopApp:packageMsi -Pscratch.asio=true
+```
+
+PortAudio downloads the current ASIO SDK at configure time when ASIO is enabled. Steinberg now dual-licenses the ASIO SDK under GPLv3 or a proprietary license; Scratch is GPLv3, so the GPLv3 option is compatible. If ASIO is advertised, follow Steinberg's trademark/logo guidelines and include: “ASIO is a registered trademark of Steinberg Media Technologies GmbH.”
 
 The Gradle task builds `desktopApp/native` with CMake and sets `java.library.path` automatically. Build a Debian package:
 

@@ -143,9 +143,56 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+
+  desktop-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configure Android SDK
+        shell: pwsh
+        run: |
+          $sdk = $env:ANDROID_SDK_ROOT
+          if (-not $sdk) { $sdk = $env:ANDROID_HOME }
+          if (-not $sdk) { $sdk = "C:\Android\android-sdk" }
+          if (-not (Test-Path $sdk)) {
+            throw "Android SDK not found at $sdk"
+          }
+          "ANDROID_HOME=$sdk" >> $env:GITHUB_ENV
+          "ANDROID_SDK_ROOT=$sdk" >> $env:GITHUB_ENV
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Windows desktop package
+        shell: pwsh
+        env:
+          JAVA_INCLUDE_PATH: ${{ env.JAVA_HOME }}/include
+        run: |
+          .\gradlew.bat :desktopApp:test :desktopApp:packageMsi --no-daemon --stacktrace
+
+      - name: Upload Windows MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: Scratch-windows-msi
+          path: desktopApp/build/compose/binaries/main/msi/*.msi
+          if-no-files-found: error
+          retention-days: 14
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [android, desktop]
+    needs: [android, desktop, desktop-windows]
     runs-on: ubuntu-24.04
 
     steps:
@@ -159,6 +206,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: Scratch-desktop-deb
+          path: release
+
+      - name: Download Windows MSI
+        uses: actions/download-artifact@v4
+        with:
+          name: Scratch-windows-msi
           path: release
 
       - name: Rename artifacts
@@ -176,3 +229,5 @@ jobs:
 
             The Android APK is a debug-signed build. Configure release signing
             secrets to publish a release-signed APK.
+
+            The Windows build uses the WASAPI desktop backend.

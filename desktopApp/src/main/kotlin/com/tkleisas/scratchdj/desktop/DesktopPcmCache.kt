@@ -7,10 +7,10 @@ import java.util.concurrent.TimeUnit
 
 object DesktopPcmCache {
     fun ensureDecoded(source: File, sampleRate: Int): File {
-        val cacheDir = File(
-            System.getenv("XDG_CACHE_HOME") ?: "${System.getProperty("user.home")}/.cache",
-            "scratch/pcm",
-        ).apply { mkdirs() }
+        val base = System.getenv("XDG_CACHE_HOME")
+            ?: System.getenv("LOCALAPPDATA")
+            ?: "${System.getProperty("user.home")}/.cache"
+        val cacheDir = File(base, "scratch/pcm").apply { mkdirs() }
 
         val key = "${source.absolutePath}|${source.length()}|${source.lastModified()}|$sampleRate"
         val name = source.nameWithoutExtension
@@ -49,12 +49,20 @@ object DesktopPcmCache {
             error("ffmpeg produced no audio for ${source.name}")
         }
 
-        Files.move(
-            temporary.toPath(),
-            cache.toPath(),
-            StandardCopyOption.REPLACE_EXISTING,
-            StandardCopyOption.ATOMIC_MOVE,
-        )
+        try {
+            Files.move(
+                temporary.toPath(),
+                cache.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE,
+            )
+        } catch (_: Throwable) {
+            Files.move(
+                temporary.toPath(),
+                cache.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
         return cache
     }
 }

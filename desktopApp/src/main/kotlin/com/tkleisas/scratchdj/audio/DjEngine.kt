@@ -13,10 +13,17 @@ object DjEngine {
             try {
                 System.loadLibrary("scratchdj")
             } catch (missing: UnsatisfiedLinkError) {
+                val windows = System.getProperty("os.name").lowercase().contains("win")
+                val resourcePath = if (windows) {
+                    "/native/windows-x64/scratchdj.dll"
+                } else {
+                    "/native/linux-x64/libscratchdj.so"
+                }
+                val suffix = if (windows) ".dll" else ".so"
                 val resource = DjEngine::class.java
-                    .getResourceAsStream("/native/linux-x64/libscratchdj.so")
+                    .getResourceAsStream(resourcePath)
                     ?: throw missing
-                val extracted = Files.createTempFile("libscratchdj", ".so").toFile()
+                val extracted = Files.createTempFile("scratchdj", suffix).toFile()
                 extracted.deleteOnExit()
                 resource.use {
                     Files.copy(it, extracted.toPath(), StandardCopyOption.REPLACE_EXISTING)

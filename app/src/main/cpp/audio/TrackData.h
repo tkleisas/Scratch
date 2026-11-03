@@ -10,6 +10,9 @@ struct MappedPcm {
     size_t samples = 0;
     void* mapping = nullptr;
     size_t bytes = 0;
+#ifdef _WIN32
+    void* fileMapping = nullptr;
+#endif
 
     ~MappedPcm();
 };

@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
@@ -47,6 +48,13 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 
+val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+val enableAsio = (providers.gradleProperty("scratch.asio").orNull
+    ?: System.getenv("SCRATCH_ASIO"))
+    ?.toBoolean() == true
+val nativeLibraryName = if (isWindows) "scratchdj.dll" else "libscratchdj.so"
+val nativeResourceDir = if (isWindows) "windows-x64" else "linux-x64"
+
 val nativeBuildDir = layout.buildDirectory.dir("native").get().asFile
 val jniInclude = providers.gradleProperty("jniInclude").orNull
     ?: System.getenv("JAVA_INCLUDE_PATH")
@@ -61,22 +69,30 @@ val configureDesktopNative = tasks.register<Exec>("configureDesktopNative") {
         )
     commandLine(
         "cmake", "-S", "native", "-B", nativeBuildDir.absolutePath,
-        "-DCMAKE_BUILD_TYPE=Release", "-DJAVA_INCLUDE_PATH=$include",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DJAVA_INCLUDE_PATH=$include",
+        "-DSCRATCH_ENABLE_ASIO=${if (enableAsio) "ON" else "OFF"}",
     )
 }
 
 val buildDesktopNative = tasks.register<Exec>("buildDesktopNative") {
     group = "native"
     dependsOn(configureDesktopNative)
-    commandLine("cmake", "--build", nativeBuildDir.absolutePath, "-j")
+    commandLine(
+        "cmake", "--build", nativeBuildDir.absolutePath,
+        "--config", "Release", "--parallel",
+    )
 }
 
 val bundledNativeDir = layout.buildDirectory.dir("generated/native-resources").get().asFile
 val copyNativeLibrary = tasks.register<Copy>("copyNativeLibrary") {
     group = "native"
     dependsOn(buildDesktopNative)
-    from(nativeBuildDir.resolve("libscratchdj.so"))
-    into(File(bundledNativeDir, "native/linux-x64"))
+    from(nativeBuildDir) {
+        include("**/$nativeLibraryName")
+        eachFile { path = name }
+    }
+    into(File(bundledNativeDir, "native/$nativeResourceDir"))
 }
 
 sourceSets {
@@ -94,19 +110,36 @@ compose.desktop {
         mainClass = "com.tkleisas.scratchdj.desktop.MainKt"
 
         nativeDistributions {
-            targetFormats(
-                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb,
-                org.jetbrains.compose.desktop.application.dsl.TargetFormat.AppImage,
-            )
+            if (isWindows) {
+                targetFormats(
+                    org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
+                    org.jetbrains.compose.desktop.application.dsl.TargetFormat.Exe,
+                )
+            } else {
+                targetFormats(
+                    org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb,
+                    org.jetbrains.compose.desktop.application.dsl.TargetFormat.AppImage,
+                )
+            }
             packageName = "Scratch"
             packageVersion = project.version.toString()
                 .substringBefore('+')
                 .substringBefore('-')
-            description = "Vinyl-first DJ app for Linux"
+            description = if (isWindows) {
+                "Vinyl-first DJ app for Windows"
+            } else {
+                "Vinyl-first DJ app for Linux"
+            }
             vendor = "Tasos Kleisas"
             modules("java.prefs")
-            linux {
-                iconFile.set(project.file("src/main/resources/scratch.png"))
+            if (isWindows) {
+                windows {
+                    iconFile.set(project.file("src/main/resources/scratch.ico"))
+                }
+            } else {
+                linux {
+                    iconFile.set(project.file("src/main/resources/scratch.png"))
+                }
             }
         }
     }
@@ -114,5 +147,9 @@ compose.desktop {
 
 tasks.matching { it.name == "run" && it is JavaExec }.configureEach {
     dependsOn(buildDesktopNative)
-    (this as JavaExec).systemProperty("java.library.path", nativeBuildDir.absolutePath)
+    val searchPath = listOf(
+        nativeBuildDir,
+        File(nativeBuildDir, "Release"),
+    ).joinToString(File.pathSeparator)
+    (this as JavaExec).systemProperty("java.library.path", searchPath)
 }

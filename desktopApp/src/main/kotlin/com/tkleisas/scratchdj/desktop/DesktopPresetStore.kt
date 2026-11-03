@@ -127,6 +127,7 @@ class DesktopPresetStore(
 
         fun defaultFile(): File {
             val config = System.getenv("XDG_CONFIG_HOME")
+                ?: System.getenv("APPDATA")
                 ?: "${System.getProperty("user.home")}/.config"
             return File(config, "scratch/presets.bin")
         }

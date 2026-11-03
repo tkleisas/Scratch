@@ -1,9 +1,19 @@
 #include "TrackLoader.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
+#else
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <cerrno>
@@ -17,6 +27,20 @@ namespace {
 
 constexpr size_t kMaxFileBytes = 1536ull * 1024ull * 1024ull;
 constexpr int kPeakBuckets = 2048;
+
+#ifdef _WIN32
+std::wstring Utf8ToWide(const std::string& value) {
+    if (value.empty()) return {};
+    const int length = MultiByteToWideChar(
+        CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0);
+    if (length <= 0) return {};
+    std::wstring result(static_cast<size_t>(length), L'\0');
+    MultiByteToWideChar(
+        CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+        result.data(), length);
+    return result;
+}
+#endif
 
 enum class Encoding {
     S8Unsigned,
@@ -455,6 +479,43 @@ std::shared_ptr<TrackData> LoadTrackFromMemory(const uint8_t* data, size_t size,
 
 std::shared_ptr<TrackData> LoadTrackFromFd(int fd, std::string& error, int targetSampleRate) {
     error.clear();
+#ifdef _WIN32
+    struct __stat64 info {};
+    if (_fstat64(fd, &info) != 0) {
+        error = "Cannot stat audio file";
+        return nullptr;
+    }
+    if (info.st_size <= 0) {
+        error = "Audio file is empty";
+        return nullptr;
+    }
+    if (static_cast<uint64_t>(info.st_size) > kMaxFileBytes) {
+        error = "Audio file is too large";
+        return nullptr;
+    }
+    _lseeki64(fd, 0, SEEK_SET);
+
+    std::vector<uint8_t> bytes(static_cast<size_t>(info.st_size));
+    size_t total = 0;
+    while (total < bytes.size()) {
+        const size_t remaining = bytes.size() - total;
+        const unsigned int chunk = static_cast<unsigned int>(
+            std::min<size_t>(remaining, 1u << 30));
+        const int read = _read(fd, bytes.data() + total, chunk);
+        if (read < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            error = "Failed to read audio file";
+            return nullptr;
+        }
+        if (read == 0) {
+            error = "Unexpected end of audio file";
+            return nullptr;
+        }
+        total += static_cast<size_t>(read);
+    }
+#else
     struct stat info {};
     if (fstat(fd, &info) != 0) {
         error = "Cannot stat audio file";
@@ -487,12 +548,32 @@ std::shared_ptr<TrackData> LoadTrackFromFd(int fd, std::string& error, int targe
         }
         total += static_cast<size_t>(read);
     }
+#endif
 
     return LoadTrackFromMemory(bytes.data(), bytes.size(), error, targetSampleRate);
 }
 
 std::shared_ptr<TrackData> LoadTrackFromFile(const std::string& path, std::string& error,
                                              int targetSampleRate) {
+#ifdef _WIN32
+    HANDLE handle = CreateFileW(
+        Utf8ToWide(path).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        error = "Cannot open audio file";
+        return nullptr;
+    }
+    const int fd = _open_osfhandle(
+        reinterpret_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
+    if (fd < 0) {
+        CloseHandle(handle);
+        error = "Cannot open audio file";
+        return nullptr;
+    }
+    auto track = LoadTrackFromFd(fd, error, targetSampleRate);
+    _close(fd);
+    return track;
+#else
     const int fd = open(path.c_str(), O_RDONLY);
     if (fd < 0) {
         error = "Cannot open audio file";
@@ -501,6 +582,7 @@ std::shared_ptr<TrackData> LoadTrackFromFile(const std::string& path, std::strin
     auto track = LoadTrackFromFd(fd, error, targetSampleRate);
     close(fd);
     return track;
+#endif
 }
 
 namespace {
@@ -554,6 +636,51 @@ std::shared_ptr<TrackData> LoadMappedPcmFromFile(const std::string& path, int sa
         return nullptr;
     }
 
+#ifdef _WIN32
+    HANDLE file = CreateFileW(
+        Utf8ToWide(path).c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        error = "Cannot open cached PCM file";
+        return nullptr;
+    }
+    LARGE_INTEGER fileSize{};
+    if (!GetFileSizeEx(file, &fileSize) || fileSize.QuadPart < 4) {
+        CloseHandle(file);
+        error = "Cached PCM file is empty";
+        return nullptr;
+    }
+    const uint64_t bytes64 = static_cast<uint64_t>(fileSize.QuadPart);
+    if (bytes64 > kMaxFileBytes || bytes64 % 4 != 0) {
+        CloseHandle(file);
+        error = bytes64 % 4 != 0
+            ? "Cached PCM file is not stereo 16-bit"
+            : "Cached PCM file is too large";
+        return nullptr;
+    }
+    const size_t bytes = static_cast<size_t>(bytes64);
+    HANDLE mappingHandle = CreateFileMappingW(
+        file, nullptr, PAGE_READONLY, 0, 0, nullptr);
+    if (!mappingHandle) {
+        CloseHandle(file);
+        error = "Cannot map cached PCM file";
+        return nullptr;
+    }
+    void* mapping = MapViewOfFile(mappingHandle, FILE_MAP_READ, 0, 0, 0);
+    CloseHandle(file);
+    if (!mapping) {
+        CloseHandle(mappingHandle);
+        error = "Cannot map cached PCM file";
+        return nullptr;
+    }
+
+    auto mapped = std::make_shared<MappedPcm>();
+    mapped->mapping = mapping;
+    mapped->fileMapping = mappingHandle;
+    mapped->bytes = bytes;
+    mapped->data = static_cast<const int16_t*>(mapping);
+    mapped->samples = bytes / sizeof(int16_t);
+#else
     const int fd = open(path.c_str(), O_RDONLY);
     if (fd < 0) {
         error = "Cannot open cached PCM file";
@@ -585,6 +712,7 @@ std::shared_ptr<TrackData> LoadMappedPcmFromFile(const std::string& path, int sa
     mapped->bytes = bytes;
     mapped->data = static_cast<const int16_t*>(mapping);
     mapped->samples = bytes / sizeof(int16_t);
+#endif
 
     const int64_t frames = static_cast<int64_t>(bytes / 4);
     auto track = std::make_shared<TrackData>();
@@ -599,7 +727,16 @@ std::shared_ptr<TrackData> LoadMappedPcmFromFile(const std::string& path, int sa
 }
 
 MappedPcm::~MappedPcm() {
+#ifdef _WIN32
+    if (mapping != nullptr && bytes > 0) {
+        UnmapViewOfFile(mapping);
+    }
+    if (fileMapping != nullptr) {
+        CloseHandle(fileMapping);
+    }
+#else
     if (mapping != nullptr && bytes > 0) {
         munmap(mapping, bytes);
     }
+#endif
 }
