@@ -33,6 +33,10 @@ target_link_libraries(scratchdj PRIVATE
     android
     log)
 
+# Android 15+ devices can use 16 KB memory pages. Keep every LOAD segment
+# aligned so the native engine loads on both 4 KB and 16 KB devices.
+target_link_options(scratchdj PRIVATE "-Wl,-z,max-page-size=16384")
+
 target_compile_options(scratchdj PRIVATE
     -Wall
     -Wextra

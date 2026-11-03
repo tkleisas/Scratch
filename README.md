@@ -2,6 +2,8 @@
 
 Scratch is a vinyl-first two-deck DJ app for Android and Linux desktop. The Android UI is Jetpack Compose over a native C++ engine on [Oboe](https://github.com/google/oboe); the desktop app is Compose Multiplatform over a native ALSA engine. Both share the same Kotlin domain models and DSP.
 
+**Android package:** `com.tkleisas.scratchdj`
+
 Android page: <https://tkleisas.github.io/scratch/> · Privacy: <https://tkleisas.github.io/scratch/privacy/>
 
 ![Scratch running on an Android phone](docs/screenshot.png)
@@ -59,6 +61,16 @@ This is an early development build, exercised on a physical Android 15 device an
 
 ![Desktop library folder settings](docs/desktop-settings.png)
 
+### Google Play assets
+
+Play Store copy, data-safety answers, and upload-ready graphics are in
+[`store/android/`](store/android/):
+
+- `listing.md` — app name, short/full descriptions, release notes
+- `data-safety.md` — Play Console Data safety answers
+- `graphics/icon-512.png` and `graphics/feature-graphic-1024x500.png`
+- `screenshots/phone/`, `screenshots/tablet-7/`, and `screenshots/tablet-10/`
+
 ### Known limitations
 
 - WAV/AIFF tracks are still parsed and held in memory; only compressed formats use the disk-backed cache yet.
@@ -71,7 +83,7 @@ This is an early development build, exercised on a physical Android 15 device an
 - The search keyboard floats over the results on some IMEs; the A/B queue buttons are deliberately kept on the left so they stay reachable.
 - Desktop audio currently targets ALSA only; JACK/PipeWire routing is not implemented.
 - The desktop UI is adapted from the Android UI rather than rendered from a shared Compose module yet.
-- The release workflow publishes a debug-signed APK until Android release signing is configured.
+- The release workflow publishes a debug-signed APK until Android release signing secrets are configured; the locally signed AAB is built with the key in `~/.volna/keystore.properties`.
 - Punch effects run as parallel sends rather than serial inserts. That keeps their tails independent, but punched Filter/Compressor/Limiter behave as parallel processing rather than full inserts. PUNCH ordering controls the pad layout; only the INSERT chain order affects serial DSP.
 - Echo tempo sync currently uses the effect's internal 120 BPM default; per-deck BPM is not pushed into the FX racks yet.
 - FX parameters are applied per audio block; automation, modulation, and named FX presets are not implemented yet.
@@ -206,6 +218,34 @@ export JAVA_HOME=/path/to/jdk17
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## Android release
+
+The Play Store package is `com.tkleisas.scratchdj`. Release builds enable R8
+minification, resource shrinking, and 16 KB native-page alignment. The signing
+key is read from `keystore.properties` in the project root, or from
+`~/.volna/keystore.properties` (the local Volna key used for this prototype).
+Neither file is committed.
+
+```bash
+export JAVA_HOME=/path/to/full-jdk17
+./gradlew :app:assembleRelease :app:bundleRelease
+```
+
+- Signed APK: `app/build/outputs/apk/release/app-release.apk`
+- Signed AAB: `app/build/outputs/bundle/release/app-release.aab`
+
+Verify 16 KB page-size support before uploading:
+
+```bash
+./scripts/check_16kb_page_size.sh \
+  app/build/outputs/apk/release/app-release.apk \
+  app/build/outputs/bundle/release/app-release.aab
+```
+
+The AAB is the Google Play upload artifact. The CI release workflow still
+publishes the debug APK until release signing secrets are configured for this
+repository; the local signed AAB is the Play build.
 
 The desktop build additionally needs a full JDK (not just a JRE), CMake, ALSA headers, and FFmpeg:
 

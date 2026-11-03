@@ -21,3 +21,7 @@ captures/
 *.pcm
 *.part
 .DS_Store
+keystore.properties
+*.jks
+*.keystore
+*.p12
