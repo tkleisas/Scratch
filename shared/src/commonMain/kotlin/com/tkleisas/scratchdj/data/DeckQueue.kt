@@ -38,6 +38,10 @@ class DeckQueue(initial: List<Track> = emptyList()) {
         return items[index]
     }
 
+    fun peekNext(): Track? = items.getOrNull(index + 1)
+
+    fun hasNext(): Boolean = peekNext() != null
+
     fun previous(): Track? {
         if (index <= 0) return null
         index -= 1

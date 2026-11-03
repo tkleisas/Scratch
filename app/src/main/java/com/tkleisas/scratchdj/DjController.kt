@@ -25,6 +25,12 @@ import com.tkleisas.scratchdj.model.DeckSide
 import com.tkleisas.scratchdj.model.DeckUiState
 import com.tkleisas.scratchdj.model.EqPreset
 import com.tkleisas.scratchdj.model.EqPresetCodec
+import com.tkleisas.scratchdj.model.FxChain
+import com.tkleisas.scratchdj.model.FxEffect
+import com.tkleisas.scratchdj.model.FxPadMode
+import com.tkleisas.scratchdj.model.FxPresetCodec
+import com.tkleisas.scratchdj.model.FxRack
+import com.tkleisas.scratchdj.model.FxRackState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +40,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 import kotlin.math.min
@@ -55,6 +63,9 @@ class DjController(private val context: Context) {
     private var loadJobB: Job? = null
     private var loadGenerationA = 0
     private var loadGenerationB = 0
+    private val decodeMutex = Mutex()
+    private var prefetchA: Prefetch? = null
+    private var prefetchB: Prefetch? = null
 
     val deckA = mutableStateOf(DeckUiState())
     val deckB = mutableStateOf(DeckUiState())
@@ -73,12 +84,15 @@ class DjController(private val context: Context) {
     val autoplayA = mutableStateOf(settingsStore.autoplayA)
     val autoplayB = mutableStateOf(settingsStore.autoplayB)
     val crossfadeSeconds = mutableFloatStateOf(settingsStore.crossfadeSeconds)
+    val fxState = mutableStateOf(FxPresetCodec.decode(settingsStore.fxPayload))
+    val fxPadActive = mutableStateOf<Set<Pair<FxRack, FxEffect>>>(emptySet())
 
     init {
         if (!DjEngine.start()) {
             message.value = DjEngine.lastError().ifBlank { "Audio engine failed to start" }
         }
         DjEngine.setCrossfader(crossfader.value)
+        applyFxState()
         scope.launch(Dispatchers.IO) { PcmCache.prune(context) }
         scope.launch(Dispatchers.IO) {
             val names = presetStore.names()
@@ -136,12 +150,15 @@ class DjController(private val context: Context) {
         if (state.track == null && !state.isLoading) {
             queue.select(track.id)
             loadTrack(track, side)
+        } else {
+            schedulePrefetch(side)
         }
     }
 
     fun removeFromQueue(trackId: Long, side: DeckSide) {
         rawQueue(side).remove(trackId)
         publishQueue(side)
+        schedulePrefetch(side)
     }
 
     fun playFromQueue(trackId: Long, side: DeckSide) {
@@ -150,6 +167,8 @@ class DjController(private val context: Context) {
         publishQueue(side)
         loadTrack(track, side, autoPlay = true)
     }
+
+    fun canSkipNext(side: DeckSide): Boolean = rawQueue(side).hasNext()
 
     fun skipToNext(side: DeckSide) {
         val next = rawQueue(side).next()
@@ -190,6 +209,7 @@ class DjController(private val context: Context) {
         recordHistory: Boolean = true,
     ) {
         rawQueue(side).select(track.id)
+        cancelPrefetchIfDifferent(side, track.id)
         val holder = deck(side)
         val current = holder.value.track
         val pushedHistory = recordHistory && current != null && current.id != track.id
@@ -237,19 +257,21 @@ class DjController(private val context: Context) {
                             }
                         }
 
-                        if (!PcmCache.isValid(cacheFile)) {
-                            PcmCache.ensureSpace(
-                                context,
-                                PcmCache.estimatedBytes(track, sampleRate),
-                            )
-                            PcmDiskDecoder.decodeToFile(
-                                context = context,
-                                uri = Uri.parse(track.uri),
-                                targetSampleRate = sampleRate,
-                                outputFile = cacheFile,
-                                isCancelled = { !isActive },
-                                onProgress = reportProgress,
-                            )
+                        decodeMutex.withLock {
+                            if (!PcmCache.isValid(cacheFile)) {
+                                PcmCache.ensureSpace(
+                                    context,
+                                    PcmCache.estimatedBytes(track, sampleRate),
+                                )
+                                PcmDiskDecoder.decodeToFile(
+                                    context = context,
+                                    uri = Uri.parse(track.uri),
+                                    targetSampleRate = sampleRate,
+                                    outputFile = cacheFile,
+                                    isCancelled = { !isActive },
+                                    onProgress = reportProgress,
+                                )
+                            }
                         }
 
                         var loaded = DjEngine.loadPcmFile(
@@ -323,6 +345,7 @@ class DjController(private val context: Context) {
                     if (track.bpm <= 0f) {
                         analyzeBpm(side, track, generation)
                     }
+                    schedulePrefetch(side)
                 }
 
                 is LoadResult.Failure -> {
@@ -351,6 +374,71 @@ class DjController(private val context: Context) {
         } else {
             queueBState.value = queue.snapshot()
         }
+    }
+
+    private data class Prefetch(val trackId: Long, val job: Job)
+
+    private fun prefetch(side: DeckSide): Prefetch? =
+        if (side == DeckSide.A) prefetchA else prefetchB
+
+    private fun setPrefetch(side: DeckSide, value: Prefetch?) {
+        if (side == DeckSide.A) prefetchA = value else prefetchB = value
+    }
+
+    private fun cancelPrefetch(side: DeckSide) {
+        prefetch(side)?.job?.cancel()
+        setPrefetch(side, null)
+    }
+
+    private fun cancelPrefetchIfDifferent(side: DeckSide, trackId: Long) {
+        val current = prefetch(side) ?: return
+        if (current.trackId != trackId) {
+            current.job.cancel()
+            setPrefetch(side, null)
+        }
+    }
+
+    private fun schedulePrefetch(side: DeckSide) {
+        val state = deck(side).value
+        if (state.isLoading) return
+        val next = rawQueue(side).peekNext()
+        if (next == null) {
+            cancelPrefetch(side)
+            return
+        }
+        val existing = prefetch(side)
+        if (existing?.trackId == next.id && existing.job.isActive) return
+        cancelPrefetch(side)
+        if (AudioFormats.isNativePlayable(next.displayName)) return
+
+        val job = scope.launch(Dispatchers.IO) {
+            try {
+                val uri = Uri.parse(next.uri)
+                val source = PcmDiskDecoder.probe(context, uri)
+                val cacheFile = PcmCache.fileFor(context, next, source.sampleRate)
+                if (PcmCache.isValid(cacheFile)) return@launch
+                decodeMutex.withLock {
+                    if (PcmCache.isValid(cacheFile)) return@withLock
+                    PcmCache.ensureSpace(
+                        context,
+                        PcmCache.estimatedBytes(next, source.sampleRate),
+                    )
+                    PcmDiskDecoder.decodeToFile(
+                        context = context,
+                        uri = uri,
+                        targetSampleRate = source.sampleRate,
+                        outputFile = cacheFile,
+                        isCancelled = { !isActive },
+                        onProgress = {},
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                // Prefetch is opportunistic; the real load path will report errors.
+            }
+        }
+        setPrefetch(side, Prefetch(next.id, job))
     }
 
     private fun currentGeneration(side: DeckSide): Int =
@@ -553,6 +641,8 @@ class DjController(private val context: Context) {
             if (deck(side).value.track == null && tracks.isNotEmpty()) {
                 val first = queue.next() ?: tracks.first()
                 loadTrack(first, side, autoPlay = false, recordHistory = false)
+            } else {
+                schedulePrefetch(side)
             }
         }
     }
@@ -809,4 +899,131 @@ class DjController(private val context: Context) {
         const val WAVEFORM_BUCKETS = 1024
         const val LOOP_SECONDS = 4
     }
+
+    fun fxRack(rack: FxRack): FxRackState =
+        fxState.value.racks[rack] ?: FxRackState()
+
+    fun setFxEnabled(rack: FxRack, chain: FxChain, effect: FxEffect, enabled: Boolean) {
+        val current = fxRack(rack)
+        val updated = current.withChain(chain, current.chain(chain).withEnabled(effect, enabled))
+        fxState.value = fxState.value.copy(racks = fxState.value.racks + (rack to updated))
+        if (!enabled && chain == FxChain.Punch && isFxPunchActive(rack, effect)) {
+            setFxPunch(rack, effect, false)
+        }
+        DjEngine.setFxEnabled(rack.ordinal, chain.ordinal, effect.ordinal, enabled)
+        persistFx()
+    }
+
+    fun setFxOrder(rack: FxRack, chain: FxChain, order: List<FxEffect>) {
+        val current = fxRack(rack)
+        val updated = current.withChain(chain, current.chain(chain).withOrder(order))
+        fxState.value = fxState.value.copy(racks = fxState.value.racks + (rack to updated))
+        DjEngine.setFxOrder(
+            rack.ordinal,
+            chain.ordinal,
+            updated.chain(chain).order.map { it.ordinal }.toIntArray(),
+        )
+        persistFx()
+    }
+
+    fun setFxParam(
+        rack: FxRack,
+        chain: FxChain,
+        effect: FxEffect,
+        index: Int,
+        value: Float,
+    ) {
+        val spec = effect.params.getOrNull(index) ?: return
+        val clamped = value.coerceIn(spec.min, spec.max)
+        val current = fxRack(rack)
+        val updated = current.withChain(chain, current.chain(chain).withParam(effect, index, clamped))
+        fxState.value = fxState.value.copy(racks = fxState.value.racks + (rack to updated))
+        DjEngine.setFxParam(rack.ordinal, chain.ordinal, effect.ordinal, index, clamped)
+        persistFx()
+    }
+
+    fun setFxSend(rack: FxRack, effect: FxEffect, value: Float) {
+        val current = fxRack(rack)
+        val updated = current.copy(
+            punch = current.punch.withSend(effect, value),
+        )
+        fxState.value = fxState.value.copy(racks = fxState.value.racks + (rack to updated))
+        DjEngine.setPunchSend(rack.ordinal, effect.ordinal, value.coerceIn(0f, 1f))
+        persistFx()
+    }
+
+    fun setFxPadMode(mode: FxPadMode) {
+        if (fxState.value.padMode == mode) return
+        releaseAllFxPads()
+        fxState.value = fxState.value.copy(padMode = mode)
+        persistFx()
+    }
+
+    fun setFxPunch(rack: FxRack, effect: FxEffect, active: Boolean) {
+        val node = fxRack(rack).punch.effect(effect)
+        if (active && !node.enabled) return
+        val key = rack to effect
+        val current = fxPadActive.value
+        if (active) {
+            if (key !in current) fxPadActive.value = current + key
+        } else {
+            if (key in current) fxPadActive.value = current - key
+        }
+        DjEngine.setPunchActive(rack.ordinal, effect.ordinal, active)
+    }
+
+    fun isFxPunchActive(rack: FxRack, effect: FxEffect): Boolean =
+        (rack to effect) in fxPadActive.value
+
+    private fun releaseAllFxPads() {
+        if (fxPadActive.value.isEmpty()) return
+        fxPadActive.value.forEach { (rack, effect) ->
+            DjEngine.setPunchActive(rack.ordinal, effect.ordinal, false)
+        }
+        fxPadActive.value = emptySet()
+    }
+
+    private fun persistFx() {
+        settingsStore.fxPayload = FxPresetCodec.encode(fxState.value)
+    }
+
+    private fun applyFxState() {
+        FxRack.entries.forEach { rack ->
+            val rackState = fxRack(rack)
+            FxChain.entries.forEach { chain ->
+                val chainState = rackState.chain(chain)
+                DjEngine.setFxOrder(
+                    rack.ordinal,
+                    chain.ordinal,
+                    chainState.order.map { it.ordinal }.toIntArray(),
+                )
+                FxEffect.entries.forEach { effect ->
+                    val node = chainState.effect(effect)
+                    DjEngine.setFxEnabled(
+                        rack.ordinal,
+                        chain.ordinal,
+                        effect.ordinal,
+                        node.enabled,
+                    )
+                    node.params.forEachIndexed { index, value ->
+                        DjEngine.setFxParam(
+                            rack.ordinal,
+                            chain.ordinal,
+                            effect.ordinal,
+                            index,
+                            value,
+                        )
+                    }
+                }
+            }
+            FxEffect.entries.forEach { effect ->
+                DjEngine.setPunchSend(
+                    rack.ordinal,
+                    effect.ordinal,
+                    rackState.punch.effect(effect).send,
+                )
+            }
+        }
+    }
+
 }

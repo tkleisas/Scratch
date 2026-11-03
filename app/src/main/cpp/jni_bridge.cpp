@@ -26,6 +26,18 @@ bool ValidDeck(jint deck) {
     return deck == 0 || deck == 1;
 }
 
+bool ValidFxRack(jint rack) {
+    return rack >= 0 && rack < 3;
+}
+
+bool ValidFxChain(jint chain) {
+    return chain >= 0 && chain < FxRack::kChainCount;
+}
+
+bool ValidFxEffect(jint effect) {
+    return effect >= 0 && effect < FxRack::kEffectCount;
+}
+
 jboolean Fail(JNIEnv*, const std::string& error) {
     std::lock_guard<std::mutex> lock(gEngineMutex);
     gLastError = error;
@@ -569,6 +581,111 @@ JNIEXPORT jint JNICALL
 Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetBufferFrames(JNIEnv*, jobject) {
     std::lock_guard<std::mutex> lock(gEngineMutex);
     return gEngine ? gEngine->BufferFrames() : 0;
+}
+
+
+JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeSetFxEnabled(
+    JNIEnv*, jobject, jint rack, jint chain, jint effect, jboolean enabled) {
+    if (!ValidFxRack(rack) || !ValidFxChain(chain) || !ValidFxEffect(effect)) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gEngine) {
+        gEngine->GetFxRack(rack).SetEnabled(
+            static_cast<FxRack::Chain>(chain), effect, enabled == JNI_TRUE);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeSetFxOrder(
+    JNIEnv* env, jobject, jint rack, jint chain, jintArray order) {
+    if (!ValidFxRack(rack) || !ValidFxChain(chain) || order == nullptr) {
+        return;
+    }
+    if (env->GetArrayLength(order) < FxRack::kEffectCount) {
+        return;
+    }
+    jint values[FxRack::kEffectCount];
+    env->GetIntArrayRegion(order, 0, FxRack::kEffectCount, values);
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gEngine) {
+        gEngine->GetFxRack(rack).SetOrder(
+            static_cast<FxRack::Chain>(chain), values);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeSetFxParam(
+    JNIEnv*, jobject, jint rack, jint chain, jint effect, jint index, jfloat value) {
+    if (!ValidFxRack(rack) || !ValidFxChain(chain) || !ValidFxEffect(effect)) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gEngine) {
+        gEngine->GetFxRack(rack).SetParam(
+            static_cast<FxRack::Chain>(chain), effect, index, value);
+    }
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetFxParam(
+    JNIEnv*, jobject, jint rack, jint chain, jint effect, jint index) {
+    if (!ValidFxRack(rack) || !ValidFxChain(chain) || !ValidFxEffect(effect)) {
+        return 0.0f;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    return gEngine
+        ? gEngine->GetFxRack(rack).GetParam(
+              static_cast<FxRack::Chain>(chain), effect, index)
+        : 0.0f;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetFxParamCount(
+    JNIEnv*, jobject, jint rack, jint chain, jint effect) {
+    if (!ValidFxRack(rack) || !ValidFxChain(chain) || !ValidFxEffect(effect)) {
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    return gEngine
+        ? gEngine->GetFxRack(rack).ParamCount(
+              static_cast<FxRack::Chain>(chain), effect)
+        : 0;
+}
+
+JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeSetPunchActive(
+    JNIEnv*, jobject, jint rack, jint effect, jboolean active) {
+    if (!ValidFxRack(rack) || !ValidFxEffect(effect)) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gEngine) {
+        gEngine->GetFxRack(rack).SetPunchActive(effect, active == JNI_TRUE);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeSetPunchSend(
+    JNIEnv*, jobject, jint rack, jint effect, jfloat send) {
+    if (!ValidFxRack(rack) || !ValidFxEffect(effect)) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gEngine) {
+        gEngine->GetFxRack(rack).SetPunchSend(effect, send);
+    }
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetPunchSend(
+    JNIEnv*, jobject, jint rack, jint effect) {
+    if (!ValidFxRack(rack) || !ValidFxEffect(effect)) {
+        return 0.0f;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    return gEngine ? gEngine->GetFxRack(rack).GetPunchSend(effect) : 0.0f;
 }
 
 }

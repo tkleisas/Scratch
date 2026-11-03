@@ -5,6 +5,24 @@ These files are vendored from the YAWN project:
 https://github.com/tkleisas/yawn
 
 YAWN is MIT licensed. The full license text is preserved in `LICENSE.txt`.
-The vendored headers had two minimal compatibility edits: references to
-YAWN's `kDefaultSampleRate` constant were replaced with `48000.0` so the
-files compile without adopting YAWN's core headers.
+
+Vendored DSP:
+
+- `audio/TimeStretcher.*`, `audio/TransientDetector.*`
+- `effects/Biquad.h`
+- `effects/Filter.*`, `effects/FreqMap.h`
+- `effects/Bitcrusher.h`, `audio/Oversampling.h`
+- `effects/Delay.*`
+- `effects/PlateReverb.*`
+- `effects/TapeEmulation.*`
+- `effects/Compressor.*`
+- `effects/Limiter.*`
+
+The effect sources are unmodified apart from include paths. Scratch provides
+a minimal local `effects/AudioEffect.h` plus `core/ParameterInfo.h` and
+`core/WidgetHint.h` so the effects compile without YAWN's DAW framework,
+JSON preset state, or UI widget code.
+
+Two earlier compatibility edits remain: references to YAWN's
+`kDefaultSampleRate` constant were replaced with `48000.0` so the files
+compile without adopting YAWN's core headers.

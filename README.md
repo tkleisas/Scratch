@@ -2,6 +2,8 @@
 
 Scratch is a vinyl-first two-deck DJ app for Android and Linux desktop. The Android UI is Jetpack Compose over a native C++ engine on [Oboe](https://github.com/google/oboe); the desktop app is Compose Multiplatform over a native ALSA engine. Both share the same Kotlin domain models and DSP.
 
+Android page: <https://tkleisas.github.io/scratch/> · Privacy: <https://tkleisas.github.io/scratch/privacy/>
+
 ![Scratch running on an Android phone](docs/screenshot.png)
 
 ![Graphical EQ with pre/post spectra](docs/eq.png)
@@ -32,11 +34,12 @@ This is an early development build, exercised on a physical Android 15 device an
 - Master 32-band logarithmic spectrum analyzer in the mixer strip, fed from the final mixed output.
 - Equal-power crossfader.
 - Per-deck channel volume in the mixer strip, from 0% to 150%, with independent A/B sliders.
-- Per-deck transport: PREV, PLAY/PAUSE, NEXT. NEXT pulls from the deck queue; PREV uses per-deck play history.
+- Per-deck transport: PREV, PLAY/PAUSE, NEXT. NEXT pulls from the deck queue and is disabled when there is no next track; the next compressed queue track is prefetched into the PCM cache in the background. PREV uses per-deck play history.
 - BPM analysis on first load using a native onset/flux detector, persisted in SQLite. BPM is shown in the deck header and search results.
 - Tempo SYNC matches the other deck’s effective BPM (including its tempo shift) and enables key lock automatically. Missing BPMs are analyzed on demand when SYNC is pressed, with progress and result feedback.
 - Tempo reset: tap the `0` next to SYNC to return pitch to 0% instantly.
 - Looping: one-tap LOOP creates and enables a 4-second loop at the playhead. IN sets the loop start without engaging the loop; OUT sets the end and starts looping. CLR clears. A pending IN point is drawn on the waveform.
+- Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, plate reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves.
 - Waveforms computed from 2048 peak buckets at load and normalized for display.
 - Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards.
 - Search overlay with one-tap add to Deck A or Deck B queues.
@@ -48,7 +51,7 @@ This is an early development build, exercised on a physical Android 15 device an
 ### Desktop (Linux)
 
 - Compose Multiplatform desktop UI with the same two-deck layout and controls as Android.
-- Native ALSA playback engine (48 kHz, s16) with the same deck, scratch, tempo/key-lock, filter, EQ, loop, crossfader, volume, and spectrum behavior.
+- Native ALSA playback engine (48 kHz, s16) with the same deck, scratch, tempo/key-lock, filter, EQ, loop, crossfader, volume, FX racks, and spectrum behavior.
 - FFmpeg-backed decoding into a disk PCM cache at `~/.cache/scratch/pcm`, including WAV/AIFF and compressed formats.
 - Library folders are configurable in **Settings → Library Folders** and persisted with `java.util.prefs`; the default is `~/Music`.
 - Desktop EQ and queue presets persist in `~/.config/scratch/presets.bin`.
@@ -69,6 +72,9 @@ This is an early development build, exercised on a physical Android 15 device an
 - Desktop audio currently targets ALSA only; JACK/PipeWire routing is not implemented.
 - The desktop UI is adapted from the Android UI rather than rendered from a shared Compose module yet.
 - The release workflow publishes a debug-signed APK until Android release signing is configured.
+- Punch effects run as parallel sends rather than serial inserts. That keeps their tails independent, but punched Filter/Compressor/Limiter behave as parallel processing rather than full inserts. PUNCH ordering controls the pad layout; only the INSERT chain order affects serial DSP.
+- Echo tempo sync currently uses the effect's internal 120 BPM default; per-deck BPM is not pushed into the FX racks yet.
+- FX parameters are applied per audio block; automation, modulation, and named FX presets are not implemented yet.
 
 ## Controls
 
@@ -77,11 +83,13 @@ This is an early development build, exercised on a physical Android 15 device an
 | Platter | While playing: scratch/nudge/spin back. While paused: jog the playhead silently. |
 | PREV | Load the previous track from this deck's history, or restart if history is empty. |
 | PLAY/PAUSE | Start or stop the deck. |
-| NEXT | Load and play the next queued track. |
+| NEXT | Load and play the next queued track. Disabled when the queue has no next track; the next compressed track is prefetched. |
 | Waveform | Tap to seek. Loop region is highlighted when active. |
 | LP / OFF / HP | Select the filter type explicitly. |
 | FILTER slider | Cutoff from 20 Hz to 20 kHz, logarithmic. |
 | EQ | Open the graphical EQ editor; drag nodes for frequency/gain, select a peak for Q, FLAT resets gains. |
+| FX (deck/master) | Open that rack's FX overlay. INSERT edits the serial chain; PUNCH edits the ordered pad rack. |
+| PUNCH pads | Hold (or latch) a pad to send the selected rack through that effect. |
 | Spectrum | Master mix spectrum in the mixer; pre/post deck spectra in the EQ editor. |
 | SETTINGS | Autoplay A/B and crossfade-duration settings; on desktop, also library folders. Persisted across launches. |
 | TEMPO | 50%–200% playback rate. Tap `0` to reset to 0%. |
@@ -92,6 +100,7 @@ This is an early development build, exercised on a physical Android 15 device an
 | OUT | Set the loop end at the current playhead and start looping. |
 | LOOP | Toggles the loop. With no loop points, creates and enables a 4-second loop at the playhead. |
 | CLR | Clears loop points and disables looping. |
+| HOLD / LATCH | Pad behavior in the FX overlay. HOLD is momentary; LATCH taps to toggle. |
 | CROSSFADER | Equal-power mix between Deck A and B. |
 | SEARCH + QUEUE | Search the SQLite index and add results to either deck queue. |
 | Queue bar | Open a deck queue; play or remove tracks, navigate with PREV/NEXT, and save/load A, B, or A+B queue presets. |
@@ -114,17 +123,18 @@ app/src/main/java/com/tkleisas/scratchdj/
   audio/SyncMath.kt        Tempo-sync ratio math
   data/                    MediaStore scan, SQLite DB, repository, queue
   model/                   DeckSide, DeckUiState
-  ui/                      Compose screens, platters, waveforms, overlays
+  ui/                      Compose screens, platters, waveforms, FX overlay/pads
 app/src/main/cpp/
   jni_bridge.cpp           JNI entry points and engine lifetime
   audio/AudioEngine.*      Oboe stream, mixing, crossfader, mastering
   audio/Deck.*             Transport, scratch/jog, tempo/key lock, filters, loops
   audio/TrackLoader.*      WAV/AIFF parsing, resampling, PCM16/mmapped track builder
   audio/BpmAnalyzer.*      Onset/flux BPM estimation over any track source
+  audio/FxRack.*           Per-rack insert chains and independent punch sends
   audio/SpectrumAnalyzer.* Master and per-deck FFT spectrum analyzers
   audio/Svf.h              State-variable DJ filter
   audio/EqualPower.h       Crossfader law
-  third_party/yawn/        Vendored MIT DSP from the YAWN project
+  third_party/yawn/        Vendored MIT DSP and YAWN effects
 app/src/test/cpp/          Host GoogleTest suite for native DSP
 app/src/test/java/         JVM unit tests
 app/src/androidTest/       Device SQLite, decoder, and native PCM tests
@@ -160,14 +170,18 @@ Title and artist are indexed, and search uses `LIKE ... ESCAPE '\'` with user wi
 The `app/src/main/cpp/third_party/yawn/` directory contains code copied from [YAWN](https://github.com/tkleisas/yawn) (MIT licensed, same author):
 
 - `audio/TimeStretcher.{h,cpp}` — WSOLA, phase vocoder, and PGHI time-stretching. Scratch uses WSOLA for key lock.
-- `audio/TransientDetector.{h,cpp}` — onset/transient detection and BPM estimation, ready for import-time analysis.
+- `audio/TransientDetector.{h,cpp}` — onset/transient detection and BPM estimation.
 - `audio/AudioBuffer.h` — buffer type used by the detector.
-- `effects/Biquad.h` — reusable biquad, kept for EQ/filter work.
+- `audio/Oversampling.h` — 2× oversampling used by the nonlinear effects.
+- `effects/Biquad.h` — reusable biquad used by EQ, filters, and effects.
+- `effects/Filter.*`, `effects/Delay.*`, `effects/PlateReverb.*`, `effects/TapeEmulation.*`, `effects/Compressor.*`, `effects/Limiter.*` — the FX processors.
+- `effects/Bitcrusher.h`, `effects/FreqMap.h` — crusher and log-frequency helpers.
+- `effects/AudioEffect.h`, `core/ParameterInfo.h`, `core/WidgetHint.h` — minimal compatibility shims replacing YAWN's DAW/UI effect base.
 - `LICENSE.txt` — YAWN's MIT license.
 
 Two minimal compatibility edits were applied: the vendored headers reference YAWN's `kDefaultSampleRate` constant, so the defaults were changed to `48000.0` to keep the files self-contained.
 
-YAWN also has `Limiter` and `TapeEmulation` (wow/flutter, saturation, hiss) that are good candidates for the Scratch master bus and vinyl character pass.
+Limiter and TapeEmulation are now wired into both the per-rack INSERT chains and the PUNCH sends, alongside Filter, Crush, Echo, and Plate Reverb.
 
 ## Build
 
@@ -215,7 +229,7 @@ The Gradle task builds `desktopApp/native` with CMake and sets `java.library.pat
 
 This project is developed test-first where the code allows it.
 
-Native DSP and file parsing (50 GoogleTest cases):
+Native DSP and file parsing (53 GoogleTest cases):
 
 ```bash
 cmake -S app/src/test/cpp -B build/native-tests -DCMAKE_BUILD_TYPE=Debug
@@ -223,15 +237,15 @@ cmake --build build/native-tests -j
 ctest --test-dir build/native-tests --output-on-failure
 ```
 
-The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation, bypass and response curves, loop wrapping, crossfader law, BPM detection, spectrum band mapping, and the vendored YAWN time-stretcher/transient detector.
+The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation, bypass and response curves, loop wrapping, crossfader law, BPM detection, spectrum band mapping, the per-rack FX bypass/filter/punch-tail behavior, and the vendored YAWN time-stretcher/transient detector.
 
-JVM unit tests (31 JUnit cases):
+JVM unit tests (34 JUnit cases):
 
 ```bash
 ./gradlew testDebugUnitTest
 ```
 
-Covers scratch angular-velocity math, format detection, persistent queue navigation, SQL LIKE escaping, time formatting, tempo-sync ratios, and EQ preset serialization.
+Covers scratch angular-velocity math, format detection, persistent queue navigation and peeking, SQL LIKE escaping, time formatting, tempo-sync ratios, EQ preset serialization, and FX preset serialization.
 
 Device tests (18 cases, real device or emulator):
 
@@ -264,7 +278,7 @@ Both jobs pin JDK 17, Android SDK 36, and NDK `27.2.12479018`.
 1. Extract the Compose deck UI into a shared `:ui` Compose Multiplatform module so Android and desktop run the exact same screen code.
 2. Full-library background analysis, beatgrid/downbeat detection, and phase-aligned SYNC.
 3. Cue points, hot cues, and slip mode.
-4. Embedded libav, JACK/PipeWire backend, and AppImage/Flatpak packaging.
+4. FX presets, automation, and tempo-synced echo; embedded libav, JACK/PipeWire backend, and AppImage/Flatpak packaging.
 5. Disk-backed WAV/AIFF support and a cache-size/usage UI.
 6. Foreground service, audio focus, media session, and notification controls.
 7. Master limiter, vinyl wow/flutter, and better anti-aliasing at extreme scratch rates.
@@ -287,6 +301,10 @@ To cut a release:
 git tag -a v0.1.1 -m "Scratch v0.1.1"
 git push origin v0.1.1
 ```
+
+## Privacy
+
+Scratch is local-first. The Android app does not collect, transmit, sell, or share personal data and has no network permission. Library metadata, settings, FX state, and decoded PCM caches stay on the device. The public policy for the Android release is at <https://tkleisas.github.io/scratch/privacy/>.
 
 ## License
 

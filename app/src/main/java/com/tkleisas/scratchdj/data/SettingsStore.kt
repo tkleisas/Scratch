@@ -26,4 +26,10 @@ class SettingsStore(
         set(value) {
             preferences.edit().putFloat("crossfade_seconds", value).apply()
         }
+
+    var fxPayload: String
+        get() = preferences.getString("fx_payload", "") ?: ""
+        set(value) {
+            preferences.edit().putString("fx_payload", value).apply()
+        }
 }

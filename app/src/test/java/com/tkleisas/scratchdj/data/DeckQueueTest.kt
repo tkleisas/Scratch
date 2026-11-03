@@ -39,6 +39,19 @@ class DeckQueueTest {
     }
 
     @Test
+    fun `peekNext does not advance the queue`() {
+        val queue = DeckQueue(listOf(track(1), track(2), track(3)))
+        assertEquals(1L, queue.next()?.id)
+        assertEquals(2L, queue.peekNext()?.id)
+        assertTrue(queue.hasNext())
+        assertEquals(2L, queue.next()?.id)
+        assertEquals(3L, queue.peekNext()?.id)
+        assertEquals(3L, queue.next()?.id)
+        assertNull(queue.peekNext())
+        assertEquals(false, queue.hasNext())
+    }
+
+    @Test
     fun `selects a track by id`() {
         val queue = DeckQueue(listOf(track(1), track(2), track(3)))
 

@@ -17,6 +17,12 @@ import com.tkleisas.scratchdj.model.DeckUiState
 import com.tkleisas.scratchdj.model.EqPreset
 import com.tkleisas.scratchdj.model.EqPresetCodec
 import com.tkleisas.scratchdj.model.EqNode
+import com.tkleisas.scratchdj.model.FxChain
+import com.tkleisas.scratchdj.model.FxEffect
+import com.tkleisas.scratchdj.model.FxPadMode
+import com.tkleisas.scratchdj.model.FxPresetCodec
+import com.tkleisas.scratchdj.model.FxRack
+import com.tkleisas.scratchdj.model.FxRackState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,12 +78,15 @@ class DjController {
     val autoplayA = mutableStateOf(preferences.getBoolean("autoplay_a", true))
     val autoplayB = mutableStateOf(preferences.getBoolean("autoplay_b", true))
     val crossfadeSeconds = mutableFloatStateOf(preferences.getFloat("crossfade_seconds", 0f))
+    val fxState = mutableStateOf(FxPresetCodec.decode(preferences.get("fx_payload", "")))
+    val fxPadActive = mutableStateOf<Set<Pair<FxRack, FxEffect>>>(emptySet())
 
     init {
         if (!DjEngine.start()) {
             message.value = DjEngine.lastError().ifBlank { "Audio engine failed to start" }
         }
         DjEngine.setCrossfader(crossfader.value)
+        applyFxState()
         scope.launch { pollEngine() }
     }
 
@@ -203,6 +212,8 @@ class DjController {
         publishQueue(side)
         loadTrack(track, side, autoPlay = true)
     }
+
+    fun canSkipNext(side: DeckSide): Boolean = rawQueue(side).hasNext()
 
     fun skipToNext(side: DeckSide) {
         val next = rawQueue(side).next()
@@ -718,4 +729,129 @@ class DjController {
     private companion object {
         const val LOOP_SECONDS = 4
     }
+
+    fun fxRack(rack: FxRack): FxRackState =
+        fxState.value.racks[rack] ?: FxRackState()
+
+    fun setFxEnabled(rack: FxRack, chain: FxChain, effect: FxEffect, enabled: Boolean) {
+        val current = fxRack(rack)
+        val updated = current.withChain(chain, current.chain(chain).withEnabled(effect, enabled))
+        fxState.value = fxState.value.copy(racks = fxState.value.racks + (rack to updated))
+        if (!enabled && chain == FxChain.Punch && isFxPunchActive(rack, effect)) {
+            setFxPunch(rack, effect, false)
+        }
+        DjEngine.setFxEnabled(rack.ordinal, chain.ordinal, effect.ordinal, enabled)
+        persistFx()
+    }
+
+    fun setFxOrder(rack: FxRack, chain: FxChain, order: List<FxEffect>) {
+        val current = fxRack(rack)
+        val updated = current.withChain(chain, current.chain(chain).withOrder(order))
+        fxState.value = fxState.value.copy(racks = fxState.value.racks + (rack to updated))
+        DjEngine.setFxOrder(
+            rack.ordinal,
+            chain.ordinal,
+            updated.chain(chain).order.map { it.ordinal }.toIntArray(),
+        )
+        persistFx()
+    }
+
+    fun setFxParam(
+        rack: FxRack,
+        chain: FxChain,
+        effect: FxEffect,
+        index: Int,
+        value: Float,
+    ) {
+        val spec = effect.params.getOrNull(index) ?: return
+        val clamped = value.coerceIn(spec.min, spec.max)
+        val current = fxRack(rack)
+        val updated = current.withChain(chain, current.chain(chain).withParam(effect, index, clamped))
+        fxState.value = fxState.value.copy(racks = fxState.value.racks + (rack to updated))
+        DjEngine.setFxParam(rack.ordinal, chain.ordinal, effect.ordinal, index, clamped)
+        persistFx()
+    }
+
+    fun setFxSend(rack: FxRack, effect: FxEffect, value: Float) {
+        val current = fxRack(rack)
+        val updated = current.copy(punch = current.punch.withSend(effect, value))
+        fxState.value = fxState.value.copy(racks = fxState.value.racks + (rack to updated))
+        DjEngine.setPunchSend(rack.ordinal, effect.ordinal, value.coerceIn(0f, 1f))
+        persistFx()
+    }
+
+    fun setFxPadMode(mode: FxPadMode) {
+        if (fxState.value.padMode == mode) return
+        releaseAllFxPads()
+        fxState.value = fxState.value.copy(padMode = mode)
+        persistFx()
+    }
+
+    fun setFxPunch(rack: FxRack, effect: FxEffect, active: Boolean) {
+        val node = fxRack(rack).punch.effect(effect)
+        if (active && !node.enabled) return
+        val key = rack to effect
+        val current = fxPadActive.value
+        if (active) {
+            if (key !in current) fxPadActive.value = current + key
+        } else {
+            if (key in current) fxPadActive.value = current - key
+        }
+        DjEngine.setPunchActive(rack.ordinal, effect.ordinal, active)
+    }
+
+    fun isFxPunchActive(rack: FxRack, effect: FxEffect): Boolean =
+        (rack to effect) in fxPadActive.value
+
+    private fun releaseAllFxPads() {
+        if (fxPadActive.value.isEmpty()) return
+        fxPadActive.value.forEach { (rack, effect) ->
+            DjEngine.setPunchActive(rack.ordinal, effect.ordinal, false)
+        }
+        fxPadActive.value = emptySet()
+    }
+
+    private fun persistFx() {
+        preferences.put("fx_payload", FxPresetCodec.encode(fxState.value))
+    }
+
+    private fun applyFxState() {
+        FxRack.entries.forEach { rack ->
+            val rackState = fxRack(rack)
+            FxChain.entries.forEach { chain ->
+                val chainState = rackState.chain(chain)
+                DjEngine.setFxOrder(
+                    rack.ordinal,
+                    chain.ordinal,
+                    chainState.order.map { it.ordinal }.toIntArray(),
+                )
+                FxEffect.entries.forEach { effect ->
+                    val node = chainState.effect(effect)
+                    DjEngine.setFxEnabled(
+                        rack.ordinal,
+                        chain.ordinal,
+                        effect.ordinal,
+                        node.enabled,
+                    )
+                    node.params.forEachIndexed { index, value ->
+                        DjEngine.setFxParam(
+                            rack.ordinal,
+                            chain.ordinal,
+                            effect.ordinal,
+                            index,
+                            value,
+                        )
+                    }
+                }
+            }
+            FxEffect.entries.forEach { effect ->
+                DjEngine.setPunchSend(
+                    rack.ordinal,
+                    effect.ordinal,
+                    rackState.punch.effect(effect).send,
+                )
+            }
+        }
+    }
+
 }

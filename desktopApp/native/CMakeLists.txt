@@ -23,11 +23,18 @@ set(APP_CPP "${CMAKE_CURRENT_SOURCE_DIR}/../../app/src/main/cpp")
 add_library(scratchdj SHARED
     "${APP_CPP}/jni_bridge.cpp"
     "${APP_CPP}/audio/Deck.cpp"
+    "${APP_CPP}/audio/FxRack.cpp"
     "${APP_CPP}/audio/TrackLoader.cpp"
     "${APP_CPP}/audio/BpmAnalyzer.cpp"
     "${APP_CPP}/audio/SpectrumAnalyzer.cpp"
     "${APP_CPP}/third_party/yawn/audio/TimeStretcher.cpp"
     "${APP_CPP}/third_party/yawn/audio/TransientDetector.cpp"
+    "${APP_CPP}/third_party/yawn/effects/Filter.cpp"
+    "${APP_CPP}/third_party/yawn/effects/Delay.cpp"
+    "${APP_CPP}/third_party/yawn/effects/PlateReverb.cpp"
+    "${APP_CPP}/third_party/yawn/effects/TapeEmulation.cpp"
+    "${APP_CPP}/third_party/yawn/effects/Compressor.cpp"
+    "${APP_CPP}/third_party/yawn/effects/Limiter.cpp"
     audio/AudioEngine.cpp)
 
 target_include_directories(scratchdj PRIVATE

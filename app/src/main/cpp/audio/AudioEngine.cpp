@@ -55,6 +55,12 @@ bool AudioEngine::Start(std::string& error) {
     decks_[0].PrepareForSampleRate(outputSampleRate);
     decks_[1].PrepareForSampleRate(outputSampleRate);
     spectrum_.Init(outputSampleRate);
+    for (auto& scratchBuffer : deckScratch_) {
+        scratchBuffer.assign(16384 * 2, 0.0f);
+    }
+    for (auto& rack : fxRacks_) {
+        rack.Init(outputSampleRate, 16384);
+    }
 
     const oboe::Result result = stream_->requestStart();
     if (result != oboe::Result::OK) {
@@ -85,6 +91,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* stream, vo
         return oboe::DataCallbackResult::Continue;
     }
 
+    const int32_t frames = std::min<int32_t>(numFrames, 16384);
     std::memset(output, 0, sizeof(float) * static_cast<size_t>(numFrames) * 2);
 
     const float targetCrossfader = crossfader_.load(std::memory_order_relaxed);
@@ -92,18 +99,28 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* stream, vo
     const StereoGains gains = EqualPowerGains(crossfaderSmoothed_);
     const int sampleRate = stream->getSampleRate();
 
-    decks_[0].Render(output, numFrames, gains.a, sampleRate);
-    decks_[1].Render(output, numFrames, gains.b, sampleRate);
+    for (int deck = 0; deck < 2; ++deck) {
+        std::fill(deckScratch_[deck].begin(), deckScratch_[deck].begin() + frames * 2, 0.0f);
+    }
+    decks_[0].Render(deckScratch_[0].data(), frames, gains.a, sampleRate);
+    decks_[1].Render(deckScratch_[1].data(), frames, gains.b, sampleRate);
+    fxRacks_[0].Process(deckScratch_[0].data(), frames);
+    fxRacks_[1].Process(deckScratch_[1].data(), frames);
+
+    for (int32_t i = 0; i < frames * 2; ++i) {
+        output[i] = deckScratch_[0][i] + deckScratch_[1][i];
+    }
+    fxRacks_[2].Process(output, frames);
 
     const float targetMaster = masterGain_.load(std::memory_order_relaxed);
     masterSmoothed_ += (targetMaster - masterSmoothed_) * 0.25f;
     const float master = masterSmoothed_;
 
-    for (int32_t i = 0; i < numFrames * 2; ++i) {
+    for (int32_t i = 0; i < frames * 2; ++i) {
         output[i] = std::clamp(output[i] * master, -1.0f, 1.0f);
     }
 
-    spectrum_.Process(output, numFrames);
+    spectrum_.Process(output, frames);
 
     if ((++callbackCount_ & 0x7F) == 0) {
         const auto latency = stream->calculateLatencyMillis();
@@ -118,6 +135,10 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* stream, vo
 
 Deck& AudioEngine::GetDeck(int index) {
     return decks_[index == 0 ? 0 : 1];
+}
+
+FxRack& AudioEngine::GetFxRack(int index) {
+    return fxRacks_[index < 0 ? 0 : (index > 2 ? 2 : index)];
 }
 
 void AudioEngine::SetCrossfader(float value) {

@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tkleisas.scratchdj.DjController
 import com.tkleisas.scratchdj.model.DeckSide
+import com.tkleisas.scratchdj.model.FxRack
 import com.tkleisas.scratchdj.ui.theme.DeckAccentA
 import com.tkleisas.scratchdj.ui.theme.DeckAccentB
 import com.tkleisas.scratchdj.ui.theme.ScratchOutline
@@ -49,6 +50,7 @@ fun DjScreen(controller: DjController) {
     var queueSide by remember { mutableStateOf<DeckSide?>(null) }
     var eqSide by remember { mutableStateOf<DeckSide?>(null) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var fxRack by remember { mutableStateOf<FxRack?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val message = controller.message.value
 
@@ -97,10 +99,28 @@ fun DjScreen(controller: DjController) {
                             searchOpen = false
                             queueSide = null
                             settingsOpen = false
+                            fxRack = null
                             eqSide = DeckSide.A
                         },
+                        onOpenFx = {
+                            searchOpen = false
+                            queueSide = null
+                            eqSide = null
+                            settingsOpen = false
+                            fxRack = FxRack.A
+                        },
                     )
-                    MixerStrip(controller, Modifier.width(136.dp).fillMaxHeight())
+                    MixerStrip(
+                        controller,
+                        Modifier.width(136.dp).fillMaxHeight(),
+                        onOpenFx = {
+                            searchOpen = false
+                            queueSide = null
+                            eqSide = null
+                            settingsOpen = false
+                            fxRack = FxRack.Master
+                        },
+                    )
                     DeckPanel(
                         controller,
                         DeckSide.B,
@@ -109,7 +129,15 @@ fun DjScreen(controller: DjController) {
                             searchOpen = false
                             queueSide = null
                             settingsOpen = false
+                            fxRack = null
                             eqSide = DeckSide.B
+                        },
+                        onOpenFx = {
+                            searchOpen = false
+                            queueSide = null
+                            eqSide = null
+                            settingsOpen = false
+                            fxRack = FxRack.B
                         },
                     )
                 }
@@ -151,6 +179,9 @@ fun DjScreen(controller: DjController) {
         }
         eqSide?.let { side ->
             EqOverlay(controller, side, onDismiss = { eqSide = null })
+        }
+        fxRack?.let { rack ->
+            FxOverlay(controller, rack, onDismiss = { fxRack = null })
         }
         if (settingsOpen) {
             SettingsOverlay(controller, onDismiss = { settingsOpen = false })

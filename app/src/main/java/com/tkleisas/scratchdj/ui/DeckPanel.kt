@@ -53,6 +53,7 @@ import com.tkleisas.scratchdj.DjController
 import com.tkleisas.scratchdj.audio.ScratchMath
 import com.tkleisas.scratchdj.model.DeckSide
 import com.tkleisas.scratchdj.model.DeckUiState
+import com.tkleisas.scratchdj.model.FxRack
 import com.tkleisas.scratchdj.ui.theme.DeckAccentA
 import com.tkleisas.scratchdj.ui.theme.DeckAccentB
 import com.tkleisas.scratchdj.ui.theme.ScratchOutline
@@ -74,10 +75,12 @@ fun DeckPanel(
     side: DeckSide,
     modifier: Modifier = Modifier,
     onOpenEq: () -> Unit,
+    onOpenFx: () -> Unit,
 ) {
     val state = controller.deck(side).value
     val accent = deckAccent(side)
     val queued = controller.queue(side).value.size
+    val fxRack = if (side == DeckSide.A) FxRack.A else FxRack.B
 
     Card(
         modifier = modifier,
@@ -147,6 +150,22 @@ fun DeckPanel(
                         fontWeight = FontWeight.Bold,
                     )
                 }
+                Box(
+                    modifier = Modifier
+                        .height(18.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(ScratchSurfaceRaised)
+                        .clickable(onClick = onOpenFx)
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "FX",
+                        color = accent,
+                        fontSize = 7.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
                 val effectiveBpm = state.bpm * state.tempo
                 Text(
                     text = if (effectiveBpm > 0f) {
@@ -159,7 +178,7 @@ fun DeckPanel(
                     fontFamily = FontFamily.Monospace,
                 )
                 Text(
-                    text = "$queued IN QUEUE",
+                    text = "${queued}Q",
                     color = accent.copy(alpha = 0.8f),
                     fontSize = 8.sp,
                     fontFamily = FontFamily.Monospace,
@@ -184,42 +203,50 @@ fun DeckPanel(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                    Platter(state, side, accent, controller)
-                    if (state.isLoading) {
-                        Column(
-                            modifier = Modifier.align(Alignment.Center),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            if (state.loadProgress > 0f) {
-                                CircularProgressIndicator(
-                                    progress = { state.loadProgress },
-                                    modifier = Modifier.size(28.dp),
-                                    strokeWidth = 2.dp,
-                                    color = accent,
-                                )
-                                Text(
-                                    text = "${(state.loadProgress * 100f).roundToInt()}%",
-                                    color = accent,
-                                    fontSize = 8.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                )
-                            } else {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
-                                    strokeWidth = 2.dp,
-                                    color = accent,
-                                )
+                Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        Platter(state, side, accent, controller)
+                        if (state.isLoading) {
+                            Column(
+                                modifier = Modifier.align(Alignment.Center),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                if (state.loadProgress > 0f) {
+                                    CircularProgressIndicator(
+                                        progress = { state.loadProgress },
+                                        modifier = Modifier.size(28.dp),
+                                        strokeWidth = 2.dp,
+                                        color = accent,
+                                    )
+                                    Text(
+                                        text = "${(state.loadProgress * 100f).roundToInt()}%",
+                                        color = accent,
+                                        fontSize = 8.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                    )
+                                } else {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp),
+                                        strokeWidth = 2.dp,
+                                        color = accent,
+                                    )
+                                }
                             }
                         }
                     }
+                    PunchPadGrid(
+                        controller = controller,
+                        rack = fxRack,
+                        accent = accent,
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                    )
                 }
 
                 Column(
                     modifier = Modifier.weight(1.08f).fillMaxHeight(),
                     verticalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    TransportRow(controller, side, state, accent, queued)
+                    TransportRow(controller, side, state, accent, controller.canSkipNext(side))
 
                     FilterControl(
                         mode = state.filterMode,
@@ -279,7 +306,7 @@ private fun TransportRow(
     side: DeckSide,
     state: DeckUiState,
     accent: Color,
-    queued: Int,
+    canNext: Boolean,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -313,7 +340,7 @@ private fun TransportRow(
         }
         SmallTransportButton(
             label = "NEXT",
-            enabled = queued > 0,
+            enabled = canNext,
             accent = accent,
             modifier = Modifier.weight(1f),
             onClick = { controller.skipToNext(side) },

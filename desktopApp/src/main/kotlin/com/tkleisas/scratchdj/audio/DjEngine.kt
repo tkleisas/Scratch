@@ -47,6 +47,30 @@ object DjEngine {
     fun setCrossfader(value: Float) = nativeSetCrossfader(value)
     fun setMasterGain(value: Float) = nativeSetMasterGain(value)
     fun setDeckGain(deck: Int, value: Float) = nativeSetDeckGain(deck, value)
+    fun setFxEnabled(rack: Int, chain: Int, effect: Int, enabled: Boolean) =
+        nativeSetFxEnabled(rack, chain, effect, enabled)
+
+    fun setFxOrder(rack: Int, chain: Int, order: IntArray) =
+        nativeSetFxOrder(rack, chain, order)
+
+    fun setFxParam(rack: Int, chain: Int, effect: Int, index: Int, value: Float) =
+        nativeSetFxParam(rack, chain, effect, index, value)
+
+    fun getFxParam(rack: Int, chain: Int, effect: Int, index: Int): Float =
+        nativeGetFxParam(rack, chain, effect, index)
+
+    fun getFxParamCount(rack: Int, chain: Int, effect: Int): Int =
+        nativeGetFxParamCount(rack, chain, effect)
+
+    fun setPunchActive(rack: Int, effect: Int, active: Boolean) =
+        nativeSetPunchActive(rack, effect, active)
+
+    fun setPunchSend(rack: Int, effect: Int, send: Float) =
+        nativeSetPunchSend(rack, effect, send)
+
+    fun getPunchSend(rack: Int, effect: Int): Float =
+        nativeGetPunchSend(rack, effect)
+
     fun setFilterMode(deck: Int, mode: Int) = nativeSetFilterMode(deck, mode)
     fun setFilterCutoff(deck: Int, value: Float) = nativeSetFilterCutoff(deck, value)
     fun setEqNode(deck: Int, index: Int, frequency: Float, gainDb: Float, q: Float) =
@@ -90,6 +114,31 @@ object DjEngine {
     private external fun nativeSetCrossfader(value: Float)
     private external fun nativeSetMasterGain(value: Float)
     private external fun nativeSetDeckGain(deck: Int, value: Float)
+    private external fun nativeSetFxEnabled(
+        rack: Int,
+        chain: Int,
+        effect: Int,
+        enabled: Boolean,
+    )
+    private external fun nativeSetFxOrder(rack: Int, chain: Int, order: IntArray)
+    private external fun nativeSetFxParam(
+        rack: Int,
+        chain: Int,
+        effect: Int,
+        index: Int,
+        value: Float,
+    )
+    private external fun nativeGetFxParam(
+        rack: Int,
+        chain: Int,
+        effect: Int,
+        index: Int,
+    ): Float
+    private external fun nativeGetFxParamCount(rack: Int, chain: Int, effect: Int): Int
+    private external fun nativeSetPunchActive(rack: Int, effect: Int, active: Boolean)
+    private external fun nativeSetPunchSend(rack: Int, effect: Int, send: Float)
+    private external fun nativeGetPunchSend(rack: Int, effect: Int): Float
+
     private external fun nativeSetFilterMode(deck: Int, mode: Int)
     private external fun nativeSetFilterCutoff(deck: Int, value: Float)
     private external fun nativeSetEqBypassed(deck: Int, bypassed: Boolean)

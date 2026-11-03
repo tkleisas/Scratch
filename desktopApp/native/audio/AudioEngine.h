@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "Deck.h"
+#include "FxRack.h"
 #include "EqualPower.h"
 #include "SpectrumAnalyzer.h"
 
@@ -19,6 +20,7 @@ public:
     void Stop();
 
     Deck& GetDeck(int index);
+    FxRack& GetFxRack(int index);
     void SetCrossfader(float value);
     void SetMasterGain(float value);
     int SampleRate() const;
@@ -33,6 +35,8 @@ private:
     std::thread thread_;
     std::atomic<bool> running_{false};
     Deck decks_[2];
+    FxRack fxRacks_[3];
+    std::vector<float> deckScratch_[2];
     scratch::SpectrumAnalyzer spectrum_;
     std::atomic<float> crossfader_{0.5f};
     std::atomic<float> masterGain_{1.0f};

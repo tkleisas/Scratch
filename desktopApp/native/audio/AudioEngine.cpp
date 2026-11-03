@@ -51,6 +51,12 @@ bool AudioEngine::Start(std::string& error) {
     decks_[0].PrepareForSampleRate(48000);
     decks_[1].PrepareForSampleRate(48000);
     spectrum_.Init(48000);
+    for (auto& scratchBuffer : deckScratch_) {
+        scratchBuffer.assign(16384 * 2, 0.0f);
+    }
+    for (auto& rack : fxRacks_) {
+        rack.Init(48000, 16384);
+    }
 
     result = snd_pcm_prepare(pcm_);
     if (result < 0) {
@@ -79,19 +85,28 @@ void AudioEngine::Stop() {
 }
 
 void AudioEngine::RenderLoop() {
-    const int frames = bufferFrames_.load(std::memory_order_relaxed);
+    const int frames = std::min(bufferFrames_.load(std::memory_order_relaxed), 16384);
     std::vector<float> mix(static_cast<size_t>(frames) * 2);
     std::vector<int16_t> output(static_cast<size_t>(frames) * 2);
 
     while (running_.load(std::memory_order_relaxed)) {
-        std::fill(mix.begin(), mix.end(), 0.0f);
-
         const float targetCrossfader = crossfader_.load(std::memory_order_relaxed);
         crossfaderSmoothed_ += (targetCrossfader - crossfaderSmoothed_) * 0.25f;
         const StereoGains gains = EqualPowerGains(crossfaderSmoothed_);
 
-        decks_[0].Render(mix.data(), frames, gains.a, 48000);
-        decks_[1].Render(mix.data(), frames, gains.b, 48000);
+        for (int deck = 0; deck < 2; ++deck) {
+            std::fill(deckScratch_[deck].begin(), deckScratch_[deck].begin() + frames * 2, 0.0f);
+        }
+        decks_[0].Render(deckScratch_[0].data(), frames, gains.a, 48000);
+        decks_[1].Render(deckScratch_[1].data(), frames, gains.b, 48000);
+        fxRacks_[0].Process(deckScratch_[0].data(), frames);
+        fxRacks_[1].Process(deckScratch_[1].data(), frames);
+
+        std::fill(mix.begin(), mix.end(), 0.0f);
+        for (int i = 0; i < frames * 2; ++i) {
+            mix[static_cast<size_t>(i)] = deckScratch_[0][i] + deckScratch_[1][i];
+        }
+        fxRacks_[2].Process(mix.data(), frames);
 
         const float targetMaster = masterGain_.load(std::memory_order_relaxed);
         masterSmoothed_ += (targetMaster - masterSmoothed_) * 0.25f;
@@ -125,6 +140,10 @@ void AudioEngine::RenderLoop() {
 
 Deck& AudioEngine::GetDeck(int index) {
     return decks_[index == 0 ? 0 : 1];
+}
+
+FxRack& AudioEngine::GetFxRack(int index) {
+    return fxRacks_[index < 0 ? 0 : (index > 2 ? 2 : index)];
 }
 
 void AudioEngine::SetCrossfader(float value) {

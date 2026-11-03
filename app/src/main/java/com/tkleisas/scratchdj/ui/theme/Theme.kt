@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.Color
 
 val DeckAccentA = Color(0xFFFFB300)
 val DeckAccentB = Color(0xFF4DD0E1)
+val MasterAccent = Color(0xFFE7E9EC)
 val ScratchBackground = Color(0xFF090B0E)
 val ScratchSurface = Color(0xFF14181E)
 val ScratchSurfaceRaised = Color(0xFF1D232B)
