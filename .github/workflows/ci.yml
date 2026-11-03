@@ -182,6 +182,13 @@ jobs:
         run: |
           .\gradlew.bat :desktopApp:test :desktopApp:packageMsi --no-daemon --stacktrace
 
+      - name: Verify optional ASIO build
+        shell: pwsh
+        env:
+          JAVA_INCLUDE_PATH: ${{ env.JAVA_HOME }}/include
+        run: |
+          .\gradlew.bat :desktopApp:buildDesktopNative -Pscratch.asio=true --no-daemon --stacktrace
+
       - name: Upload Windows MSI
         uses: actions/upload-artifact@v4
         with:
