@@ -9,10 +9,10 @@ Upload these files in Google Play Console.
 | App icon | `graphics/icon-512.png` | 512 × 512 px |
 | Feature graphic | `graphics/feature-graphic-1024x500.png` | 1024 × 500 px |
 | Phone screenshots | `screenshots/phone/01-main.png` … `04-settings.png` | 1920 × 1080 px |
-| 7-inch tablet screenshots | `screenshots/tablet-7/01-main.png` … `04-settings.png` | 1920 × 1200 px |
-| 10-inch tablet screenshots | `screenshots/tablet-10/01-main.png` … `04-settings.png` | 2560 × 1600 px |
+| 7-inch tablet screenshots | `screenshots/tablet-7/01-main.png` … `04-settings.png` | 1920 × 1080 px (16:9) |
+| 10-inch tablet screenshots | `screenshots/tablet-10/01-main.png` … `04-settings.png` | 2560 × 1440 px (16:9) |
 
-Phone and tablet screenshots are landscape and use the same app UI; replace the tablet set with fresh captures if you want device-specific chrome.
+Phone and tablet screenshots are 16:9 landscape and use the same app UI; replace the tablet set with fresh captures if you want device-specific chrome.
 
 ## Copy
 
