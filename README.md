@@ -36,7 +36,7 @@ This is an early development build, exercised on a physical Android 15 device an
 - BPM analysis on first load using a native onset/flux detector, persisted in SQLite. BPM is shown in the deck header and search results.
 - Tempo SYNC matches the other deck’s effective BPM (including its tempo shift) and enables key lock automatically. Missing BPMs are analyzed on demand when SYNC is pressed, with progress and result feedback.
 - Tempo reset: tap the `0` next to SYNC to return pitch to 0% instantly.
-- Looping: one-tap LOOP creates and enables a 4-second loop at the playhead; IN and OUT set custom loop points; CLR clears. The active loop is drawn on the waveform.
+- Looping: one-tap LOOP creates and enables a 4-second loop at the playhead. IN sets the loop start without engaging the loop; OUT sets the end and starts looping. CLR clears. A pending IN point is drawn on the waveform.
 - Waveforms computed from 2048 peak buckets at load and normalized for display.
 - Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards.
 - Search overlay with one-tap add to Deck A or Deck B queues.
@@ -88,7 +88,8 @@ This is an early development build, exercised on a physical Android 15 device an
 | SYNC | Match the other deck’s effective BPM, analyze BPM on demand if needed, and enable key lock. |
 | KEY | Enables WSOLA key lock; tempo changes no longer repitch. |
 | VOL A / VOL B | Per-deck output volume (0%–150%). |
-| IN / OUT | Set the loop start/end at the current playhead, and enable the loop. |
+| IN | Set the loop start at the current playhead without starting the loop. |
+| OUT | Set the loop end at the current playhead and start looping. |
 | LOOP | Toggles the loop. With no loop points, creates and enables a 4-second loop at the playhead. |
 | CLR | Clears loop points and disables looping. |
 | CROSSFADER | Equal-power mix between Deck A and B. |

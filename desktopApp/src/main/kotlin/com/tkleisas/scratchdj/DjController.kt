@@ -518,16 +518,18 @@ class DjController {
     }
 
     fun setLoopIn(side: DeckSide) {
-        val state = deck(side).value
+        val holder = deck(side)
+        val state = holder.value
         if (state.track == null || state.durationMs <= 0) return
         val start = (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 0.999f)
-        val existingEnd = state.loopOut
-        val end = if (existingEnd != null && existingEnd > start) {
-            existingEnd
+        val end = state.loopOut?.takeIf { it > start }
+        DjEngine.setLoopEnabled(side.index, false)
+        if (end != null) {
+            DjEngine.setLoopPoints(side.index, start, end)
         } else {
-            min(1f, start + LOOP_SECONDS * 1000f / state.durationMs)
+            DjEngine.clearLoop(side.index)
         }
-        applyLoop(side, start, end, enabled = true)
+        holder.value = state.copy(loopIn = start, loopOut = end, loopEnabled = false)
     }
 
     fun setLoopOut(side: DeckSide) {

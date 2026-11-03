@@ -531,7 +531,10 @@ private fun LoopControl(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        LoopChip("IN", active = false, accent = accent, modifier = Modifier.weight(1f), onClick = onSetIn)
+        val loopIn = state.loopIn
+        val loopOut = state.loopOut
+        val pendingIn = loopIn != null && (loopOut == null || loopOut <= loopIn)
+        LoopChip("IN", active = pendingIn, accent = accent, modifier = Modifier.weight(1f), onClick = onSetIn)
         LoopChip("OUT", active = false, accent = accent, modifier = Modifier.weight(1f), onClick = onSetOut)
         LoopChip(
             "LOOP",

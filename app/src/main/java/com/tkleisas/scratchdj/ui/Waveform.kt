@@ -90,9 +90,11 @@ fun Waveform(
                 drawPath(path, accent.copy(alpha = 0.22f))
             }
 
-            if (loopIn != null && loopOut != null && loopOut > loopIn) {
-                val startX = loopIn.coerceIn(0f, 1f) * size.width
-                val endX = loopOut.coerceIn(0f, 1f) * size.width
+            val inPoint = loopIn
+            val outPoint = loopOut
+            if (inPoint != null && outPoint != null && outPoint > inPoint) {
+                val startX = inPoint.coerceIn(0f, 1f) * size.width
+                val endX = outPoint.coerceIn(0f, 1f) * size.width
                 val width = (endX - startX).coerceAtLeast(2.dp.toPx())
                 drawRect(
                     color = accent.copy(alpha = if (loopEnabled) 0.20f else 0.08f),
@@ -109,6 +111,14 @@ fun Waveform(
                     color = accent.copy(alpha = if (loopEnabled) 0.95f else 0.45f),
                     start = Offset(startX + width, 0f),
                     end = Offset(startX + width, size.height),
+                    strokeWidth = 1.5.dp.toPx(),
+                )
+            } else if (inPoint != null) {
+                val inX = inPoint.coerceIn(0f, 1f) * size.width
+                drawLine(
+                    color = accent.copy(alpha = 0.9f),
+                    start = Offset(inX, 0f),
+                    end = Offset(inX, size.height),
                     strokeWidth = 1.5.dp.toPx(),
                 )
             }
