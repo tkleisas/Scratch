@@ -343,7 +343,7 @@ Both jobs pin JDK 17, Android SDK 36, and NDK `27.2.12479018`.
 3. Cue points, hot cues, and slip mode.
 4. FX presets and automation; embedded libav, JACK/PipeWire backend, and AppImage/Flatpak packaging.
 5. Disk-backed WAV/AIFF support and a cache-size/usage UI.
-6. Foreground service, audio focus, media session, and notification controls.
+6. Full media session and lock-screen/resume notification controls.
 7. Master limiter, vinyl wow/flutter, and better anti-aliasing at extreme scratch rates.
 8. Latency measurement and device-specific audio tuning.
 
