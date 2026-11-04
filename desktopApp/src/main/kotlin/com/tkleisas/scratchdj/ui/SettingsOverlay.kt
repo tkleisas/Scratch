@@ -37,11 +37,15 @@ import com.tkleisas.scratchdj.desktop.AppInfo
 import com.tkleisas.scratchdj.desktop.FileDialogs
 import com.tkleisas.scratchdj.DjController
 import com.tkleisas.scratchdj.model.DeckSide
+import com.tkleisas.scratchdj.model.WaveformMode
+import com.tkleisas.scratchdj.model.WaveformWindowMath
+import com.tkleisas.scratchdj.model.WaveformWindowUnit
 import com.tkleisas.scratchdj.ui.theme.DeckAccentA
 import com.tkleisas.scratchdj.ui.theme.DeckAccentB
 import com.tkleisas.scratchdj.ui.theme.ScratchBackground
 import com.tkleisas.scratchdj.ui.theme.ScratchOutline
 import com.tkleisas.scratchdj.ui.theme.ScratchSurfaceRaised
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsOverlay(controller: DjController, onDismiss: () -> Unit) {
@@ -100,6 +104,17 @@ fun SettingsOverlay(controller: DjController, onDismiss: () -> Unit) {
                     enabled = controller.autoplayB.value,
                     onChange = { controller.setAutoplay(DeckSide.B, it) },
                 )
+
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = "WAVEFORM",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp,
+                )
+                Spacer(Modifier.height(6.dp))
+                WaveformSettings(controller)
 
                 Spacer(Modifier.height(18.dp))
                 Text(
@@ -233,6 +248,142 @@ fun SettingsOverlay(controller: DjController, onDismiss: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun WaveformSettings(controller: DjController) {
+    val scrolling = controller.waveformMode.value == WaveformMode.Scroll
+    val beats = controller.waveformWindowUnit.value == WaveformWindowUnit.Beats
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(ScratchSurfaceRaised, RoundedCornerShape(10.dp))
+            .padding(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Scrolling display",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Keep the playhead centered in a zoomed window",
+                    color = ScratchOutline,
+                    fontSize = 9.sp,
+                )
+            }
+            Switch(
+                checked = scrolling,
+                onCheckedChange = {
+                    controller.setWaveformMode(
+                        if (it) WaveformMode.Scroll else WaveformMode.Full,
+                    )
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color(0xFF0A0C0F),
+                    checkedTrackColor = DeckAccentA,
+                ),
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "BPM-synced window",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Size the window in beats instead of seconds",
+                    color = ScratchOutline,
+                    fontSize = 9.sp,
+                )
+            }
+            Switch(
+                checked = beats,
+                onCheckedChange = {
+                    controller.setWaveformWindowUnit(
+                        if (it) WaveformWindowUnit.Beats else WaveformWindowUnit.Seconds,
+                    )
+                },
+                colors = SwitchDefaults.colors(
+                    checkedThumbColor = Color(0xFF0A0C0F),
+                    checkedTrackColor = DeckAccentA,
+                ),
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = "Window size",
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = if (beats) {
+                    String.format(
+                        java.util.Locale.US,
+                        "%.0f beats",
+                        controller.waveformWindowBeats.floatValue,
+                    )
+                } else {
+                    String.format(
+                        java.util.Locale.US,
+                        "%.0f s",
+                        controller.waveformWindowSeconds.floatValue,
+                    )
+                },
+                color = DeckAccentA,
+                fontSize = 11.sp,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            )
+        }
+        CompactSlider(
+            value = if (beats) controller.waveformWindowBeats.floatValue
+                else controller.waveformWindowSeconds.floatValue,
+            onValueChange = {
+                if (beats) {
+                    controller.setWaveformWindowBeats(it.roundToInt().toFloat())
+                } else {
+                    controller.setWaveformWindowSeconds(it.roundToInt().toFloat())
+                }
+            },
+            accent = DeckAccentA,
+            valueRange = if (beats) {
+                WaveformWindowMath.MIN_BEATS..WaveformWindowMath.MAX_BEATS
+            } else {
+                WaveformWindowMath.MIN_SECONDS..WaveformWindowMath.MAX_SECONDS
+            },
+            trackHeight = 26.dp,
+        )
+        Text(
+            text = if (beats) {
+                "At 120 BPM this is about " +
+                    String.format(
+                        java.util.Locale.US,
+                        "%.0f s",
+                        controller.waveformWindowBeats.floatValue * 60f / 120f,
+                    ) + ". Each deck follows its effective BPM."
+            } else {
+                "The scrolling window shows this many seconds around the playhead."
+            },
+            color = ScratchOutline,
+            fontSize = 9.sp,
+        )
     }
 }
 

@@ -26,7 +26,7 @@ namespace scratch {
 namespace {
 
 constexpr size_t kMaxFileBytes = 1536ull * 1024ull * 1024ull;
-constexpr int kPeakBuckets = 2048;
+constexpr int kPeakBuckets = 8192;
 
 #ifdef _WIN32
 std::wstring Utf8ToWide(const std::string& value) {

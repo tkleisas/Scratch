@@ -45,13 +45,12 @@ This is an early development build, exercised on a physical Android 15 device an
 - Looping: one-tap LOOP creates and enables a 4-second loop at the playhead. IN sets the loop start without engaging the loop; OUT sets the end and starts looping. CLR clears. A pending IN point is drawn on the waveform. Key-locked playback wraps the stretcher source at the loop seam instead of resetting it, so loops stay continuous.
 - Cue points and four hot cues per deck: CUE sets or jumps and pauses; hot-cue pads set empty slots or jump and play; long-press clears. Cues reset on track load and are session-only. SLIP mode makes platter scratches return to where playback would have reached on release.
 - Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, plate reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves. Echo tempo sync follows the effective BPM of its rack's deck (the master rack follows the active crossfader side).
-- Waveforms computed from 2048 peak buckets at load and normalized for display.
+- Waveforms computed from 8192 peak buckets at load and normalized for display. Two global views: **FULL** shows the whole track; **SCROLL** follows the playhead in a zoomed window with a whole-track minimap. Tap or drag either waveform to seek, and tap the **FULL/SCROLL** pill to switch views. The scrolling window is configured in seconds or beats and follows each deck's effective BPM.
 - Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards.
 - Search overlay with one-tap add to Deck A or Deck B queues.
 - Per-deck queues are persistent playlists with a cursor: playing a track no longer removes it, and PREV/NEXT move backward/forward through the queue. The current track is highlighted in the queue overlay.
 - Queue lists can be saved as named presets (Deck A, Deck B, or A+B) in SQLite and reloaded later. Loading A-only or B-only preserves the other deck’s queue.
-- Settings screen with persisted Autoplay Deck A and Autoplay Deck B toggles, plus a persisted crossfade-duration value. Autoplay controls whether the deck advances to the next queued track at the end.
-- Tap the waveform to seek.
+- Settings screen with persisted Autoplay Deck A/B toggles, a persisted crossfade-duration value, and global waveform settings: FULL/SCROLL display, window unit (seconds or beats), and window size. Autoplay controls whether the deck advances to the next queued track at the end.
 
 ### Desktop (Linux / Windows)
 
@@ -85,6 +84,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 - Playback notifications currently expose Pause/stop only; a full media session with lock-screen controls and resume is not implemented.
 - True overlapping crossfade is not implemented yet; the crossfade duration is persisted, but it needs a second playback source per deck. Autoplay currently advances with the deck’s normal fade-in.
 - Reported latency on the test phone varies between roughly 40–125 ms depending on the callback; Bluetooth output is not suitable for DJ use.
+- The scrolling waveform is BPM-scaled but not beat/downbeat-aligned yet; the window follows the effective BPM without a beatgrid.
 - The search keyboard floats over the results on some IMEs; the A/B queue buttons are deliberately kept on the left so they stay reachable.
 - Linux audio targets ALSA only; Windows uses WASAPI/ASIO. JACK/PipeWire routing is not implemented.
 - The desktop UI is adapted from the Android UI rather than rendered from a shared Compose module yet.
@@ -100,7 +100,9 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 | PREV | Load the previous track from this deck's history, or restart if history is empty. |
 | PLAY/PAUSE | Start or stop the deck. |
 | NEXT | Load and play the next queued track. Disabled when the queue has no next track; the next compressed track is prefetched. |
-| Waveform | Tap to seek. Loop region is highlighted when active. |
+| Waveform | Tap or drag to seek. Loop region is highlighted when active. |
+| FULL / SCROLL | Tap the pill at the top-right of either waveform to switch the global view. FULL shows the whole track; SCROLL follows the playhead in a zoomed window. |
+| Scrolling minimap | In SCROLL mode, tap or drag the thin whole-track bar at the bottom of the waveform to jump anywhere. |
 | LP / OFF / HP | Select the filter type explicitly. |
 | FILTER slider | Cutoff from 20 Hz to 20 kHz, logarithmic. |
 | EQ | Open the graphical EQ editor; drag nodes for frequency/gain, select a peak for Q, FLAT resets gains. |
@@ -125,7 +127,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 
 ```
 shared/src/commonMain/kotlin/com/tkleisas/scratchdj/
-  model/                   Deck/side/queue state shared by Android and desktop
+  model/                   Deck/side/queue state and waveform window math shared by both apps
   audio/                   Sync math and preset codecs
   data/                    Shared queue and EQ preset models
 app/src/main/java/com/tkleisas/scratchdj/
@@ -302,6 +304,14 @@ ctest --test-dir build/native-tests --output-on-failure
 ```
 
 The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation, bypass and response curves, loop wrapping, crossfader law, BPM detection, spectrum band mapping, the per-rack FX bypass/filter/punch-tail behavior, serial punch limiter behavior, key-lock loop continuity, crossfader gain ramps, and the vendored YAWN time-stretcher/transient detector.
+
+Shared Kotlin model tests (6 cases):
+
+```bash
+./gradlew :shared:desktopTest
+```
+
+Covers waveform window sizing in seconds/beats, BPM fallback, playhead follow behavior, and short-track clamping.
 
 JVM unit tests (34 JUnit cases):
 

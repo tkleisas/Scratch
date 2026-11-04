@@ -192,12 +192,15 @@ fun DeckPanel(
                 positionMs = state.positionMs,
                 durationMs = state.durationMs,
                 accent = accent,
+                mode = controller.waveformMode.value,
+                windowMs = controller.waveformWindowMs(side),
                 loopIn = state.loopIn,
                 loopOut = state.loopOut,
                 loopEnabled = state.loopEnabled,
                 cuePoint = state.cuePoint,
-                modifier = Modifier.fillMaxWidth().height(28.dp),
+                modifier = Modifier.fillMaxWidth().height(50.dp),
                 onSeek = { controller.seekFraction(side, it) },
+                onToggleMode = { controller.toggleWaveformMode() },
             )
 
             Spacer(Modifier.height(2.dp))

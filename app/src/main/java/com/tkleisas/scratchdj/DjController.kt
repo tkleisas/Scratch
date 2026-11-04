@@ -31,6 +31,9 @@ import com.tkleisas.scratchdj.model.FxPadMode
 import com.tkleisas.scratchdj.model.FxPresetCodec
 import com.tkleisas.scratchdj.model.FxRack
 import com.tkleisas.scratchdj.model.FxRackState
+import com.tkleisas.scratchdj.model.WaveformMode
+import com.tkleisas.scratchdj.model.WaveformWindowMath
+import com.tkleisas.scratchdj.model.WaveformWindowUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +88,10 @@ class DjController(private val context: Context) {
     val autoplayA = mutableStateOf(settingsStore.autoplayA)
     val autoplayB = mutableStateOf(settingsStore.autoplayB)
     val crossfadeSeconds = mutableFloatStateOf(settingsStore.crossfadeSeconds)
+    val waveformMode = mutableStateOf(settingsStore.waveformMode)
+    val waveformWindowUnit = mutableStateOf(settingsStore.waveformWindowUnit)
+    val waveformWindowSeconds = mutableFloatStateOf(settingsStore.waveformWindowSeconds)
+    val waveformWindowBeats = mutableFloatStateOf(settingsStore.waveformWindowBeats)
     val fxState = mutableStateOf(FxPresetCodec.decode(settingsStore.fxPayload))
     val fxPadActive = mutableStateOf<Set<Pair<FxRack, FxEffect>>>(emptySet())
 
@@ -891,6 +898,55 @@ class DjController(private val context: Context) {
         updateFxTempo()
     }
 
+    fun toggleWaveformMode() {
+        setWaveformMode(
+            if (waveformMode.value == WaveformMode.Full) {
+                WaveformMode.Scroll
+            } else {
+                WaveformMode.Full
+            },
+        )
+    }
+
+    fun setWaveformMode(value: WaveformMode) {
+        waveformMode.value = value
+        settingsStore.waveformMode = value
+    }
+
+    fun setWaveformWindowUnit(value: WaveformWindowUnit) {
+        waveformWindowUnit.value = value
+        settingsStore.waveformWindowUnit = value
+    }
+
+    fun setWaveformWindowSeconds(value: Float) {
+        val clamped = value.coerceIn(
+            WaveformWindowMath.MIN_SECONDS,
+            WaveformWindowMath.MAX_SECONDS,
+        )
+        waveformWindowSeconds.floatValue = clamped
+        settingsStore.waveformWindowSeconds = clamped
+    }
+
+    fun setWaveformWindowBeats(value: Float) {
+        val clamped = value.coerceIn(
+            WaveformWindowMath.MIN_BEATS,
+            WaveformWindowMath.MAX_BEATS,
+        )
+        waveformWindowBeats.floatValue = clamped
+        settingsStore.waveformWindowBeats = clamped
+    }
+
+    fun waveformWindowMs(side: DeckSide): Long {
+        val state = deck(side).value
+        val effectiveBpm = if (state.bpm > 0f) state.bpm * state.tempo else 0f
+        return WaveformWindowMath.windowMs(
+            unit = waveformWindowUnit.value,
+            seconds = waveformWindowSeconds.floatValue,
+            beats = waveformWindowBeats.floatValue,
+            bpm = effectiveBpm,
+        )
+    }
+
     fun scratchBegin(side: DeckSide) {
         if (deck(side).value.track != null) {
             DjEngine.scratchBegin(side.index)
@@ -1003,7 +1059,7 @@ class DjController(private val context: Context) {
     }
 
     private companion object {
-        const val WAVEFORM_BUCKETS = 1024
+        const val WAVEFORM_BUCKETS = 8192
         const val LOOP_SECONDS = 4
     }
 
