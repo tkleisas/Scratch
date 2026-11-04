@@ -2,6 +2,7 @@ package com.tkleisas.scratchdj.data
 
 import android.content.Context
 import com.tkleisas.scratchdj.model.WaveformMode
+import com.tkleisas.scratchdj.ui.theme.ScratchThemeName
 import com.tkleisas.scratchdj.model.WaveformWindowMath
 import com.tkleisas.scratchdj.model.WaveformWindowUnit
 
@@ -28,6 +29,17 @@ class SettingsStore(
         get() = preferences.getFloat("crossfade_seconds", 0.0f)
         set(value) {
             preferences.edit().putFloat("crossfade_seconds", value).apply()
+        }
+
+    var theme: ScratchThemeName
+        get() = runCatching {
+            ScratchThemeName.valueOf(
+                preferences.getString("theme", ScratchThemeName.Classic.name)
+                    ?: ScratchThemeName.Classic.name,
+            )
+        }.getOrDefault(ScratchThemeName.Classic)
+        set(value) {
+            preferences.edit().putString("theme", value.name).apply()
         }
 
     var waveformMode: WaveformMode

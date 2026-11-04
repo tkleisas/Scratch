@@ -1,6 +1,7 @@
 package com.tkleisas.scratchdj.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +27,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,9 +38,12 @@ import com.tkleisas.scratchdj.model.DeckSide
 import com.tkleisas.scratchdj.model.WaveformMode
 import com.tkleisas.scratchdj.model.WaveformWindowMath
 import com.tkleisas.scratchdj.model.WaveformWindowUnit
+import com.tkleisas.scratchdj.ui.theme.ScratchThemeName
+import com.tkleisas.scratchdj.ui.theme.paletteFor
 import com.tkleisas.scratchdj.ui.theme.DeckAccentA
 import com.tkleisas.scratchdj.ui.theme.DeckAccentB
 import com.tkleisas.scratchdj.ui.theme.ScratchBackground
+import com.tkleisas.scratchdj.ui.theme.ScratchOnAccent
 import com.tkleisas.scratchdj.ui.theme.ScratchOutline
 import com.tkleisas.scratchdj.ui.theme.ScratchSurfaceRaised
 import kotlin.math.roundToInt
@@ -77,6 +82,17 @@ fun SettingsOverlay(controller: DjController, onDismiss: () -> Unit) {
                 }
 
                 Spacer(Modifier.height(10.dp))
+                Text(
+                    text = "APPEARANCE",
+                    color = DeckAccentA,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp,
+                )
+                Spacer(Modifier.height(6.dp))
+                ThemeSettings(controller)
+
+                Spacer(Modifier.height(18.dp))
                 Text(
                     text = "AUTOPLAY",
                     color = DeckAccentA,
@@ -211,7 +227,7 @@ private fun WaveformSettings(controller: DjController) {
                     )
                 },
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color(0xFF0A0C0F),
+                    checkedThumbColor = ScratchOnAccent,
                     checkedTrackColor = DeckAccentA,
                 ),
             )
@@ -242,7 +258,7 @@ private fun WaveformSettings(controller: DjController) {
                     )
                 },
                 colors = SwitchDefaults.colors(
-                    checkedThumbColor = Color(0xFF0A0C0F),
+                    checkedThumbColor = ScratchOnAccent,
                     checkedTrackColor = DeckAccentA,
                 ),
             )
@@ -309,6 +325,53 @@ private fun WaveformSettings(controller: DjController) {
             color = ScratchOutline,
             fontSize = 9.sp,
         )
+    }
+}
+
+@Composable
+private fun ThemeSettings(controller: DjController) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        ScratchThemeName.entries.forEach { theme ->
+            val palette = paletteFor(theme)
+            val selected = controller.theme.value == theme
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (selected) palette.accentA.copy(alpha = 0.14f)
+                        else ScratchSurfaceRaised,
+                    )
+                    .clickable { controller.setTheme(theme) }
+                    .padding(horizontal = 5.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(palette.accentA, CircleShape),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(palette.accentB, CircleShape),
+                    )
+                }
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    text = theme.label,
+                    color = if (selected) palette.accentA
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 7.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 

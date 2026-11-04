@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tkleisas.scratchdj.model.WaveformMode
+import com.tkleisas.scratchdj.ui.theme.ScratchSurfaceRaised
 import com.tkleisas.scratchdj.model.WaveformWindowMath
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -366,7 +367,7 @@ private fun ModePill(
         modifier = modifier
             .height(16.dp)
             .clip(RoundedCornerShape(4.dp))
-            .background(Color(0xCC14171D))
+            .background(ScratchSurfaceRaised.copy(alpha = 0.88f))
             .clickable(onClick = onClick)
             .padding(horizontal = 5.dp),
         contentAlignment = Alignment.Center,

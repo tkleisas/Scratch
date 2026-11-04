@@ -27,7 +27,7 @@ fun main() = application {
         icon = painterResource("scratch.png"),
         state = rememberWindowState(width = 1_600.dp, height = 720.dp),
     ) {
-        ScratchTheme {
+        ScratchTheme(theme = controller.theme.value) {
             CompositionLocalProvider(LocalDensity provides Density(2f)) {
                 DjScreen(controller)
             }

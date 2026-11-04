@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
         hideSystemBars()
         controller = (application as ScratchApplication).controller
         setContent {
-            ScratchTheme {
+            ScratchTheme(theme = controller.theme.value) {
                 ScratchRoot(controller)
             }
         }

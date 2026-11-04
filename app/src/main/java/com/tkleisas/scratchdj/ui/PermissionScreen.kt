@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tkleisas.scratchdj.ui.theme.DeckAccentA
 import com.tkleisas.scratchdj.ui.theme.ScratchBackground
+import com.tkleisas.scratchdj.ui.theme.ScratchBackgroundAlt
+import com.tkleisas.scratchdj.ui.theme.ScratchOnAccent
 import com.tkleisas.scratchdj.ui.theme.ScratchOutline
 
 @Composable
@@ -38,7 +40,7 @@ fun PermissionScreen(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(ScratchBackground, Color(0xFF11151B)),
+                    listOf(ScratchBackground, ScratchBackgroundAlt),
                 ),
             )
             .padding(32.dp),
@@ -82,7 +84,7 @@ fun PermissionScreen(
                 onClick = onRequest,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = DeckAccentA,
-                    contentColor = Color(0xFF1B1300),
+                    contentColor = ScratchOnAccent,
                 ),
             ) {
                 Text("ALLOW LIBRARY ACCESS", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)

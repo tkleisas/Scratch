@@ -4,7 +4,7 @@ Scratch is a vinyl-first two-deck DJ app for Android and Linux desktop. The Andr
 
 **Android package:** `com.tkleisas.scratchdj`
 
-Android page: <https://tkleisas.github.io/scratch/> · Privacy: <https://tkleisas.github.io/scratch/privacy/>
+Android page: <https://tkleisas.github.io/scratch/> · Google Play: <https://play.google.com/store/apps/details?id=com.tkleisas.scratchdj> · Privacy: <https://tkleisas.github.io/scratch/privacy/>
 
 ![Scratch running on an Android phone](docs/screenshot.png)
 
@@ -21,6 +21,7 @@ This is an early development build, exercised on a physical Android 15 device an
 ### Working today
 
 - Immersive full-screen landscape UI with dual rotating platters, waveforms, and a center mixer.
+- Four persisted color themes: **Classic** (the original default), **High Contrast**, **Midnight**, and **Ember**. Theme colors apply to both decks, the mixer, overlays, and settings on Android and desktop.
 - Oboe audio engine: one 48 kHz float output stream, low-latency performance mode, exclusive mode attempted first with shared-mode fallback, and automatic stream reopen after device disconnects.
 - Android audio focus and a foreground playback service with an ongoing notification and Pause action; playback keeps running when the app is backgrounded.
 - WAV and AIFF/AIFC (uncompressed) playback: 8/16/24/32-bit PCM, 32-bit float WAV, mono or stereo, including AIFC `NONE`/`sowt`.
@@ -51,7 +52,7 @@ This is an early development build, exercised on a physical Android 15 device an
 - Search overlay with one-tap add to Deck A or Deck B queues.
 - Per-deck queues are persistent playlists with a cursor: playing a track no longer removes it, and PREV/NEXT move backward/forward through the queue. The current track is highlighted in the queue overlay.
 - Queue lists can be saved as named presets (Deck A, Deck B, or A+B) in SQLite and reloaded later. Loading A-only or B-only preserves the other deck’s queue.
-- Settings screen with persisted Autoplay Deck A/B toggles, a persisted auto-crossfade duration, and global waveform settings: FULL/SCROLL display, window unit (seconds or beats), and window size. Autoplay controls whether the deck advances to the next queued track at the end; the crossfade duration controls how early that next track starts.
+- Settings screen with persisted appearance, Autoplay Deck A/B toggles, auto-crossfade duration, and global waveform settings: FULL/SCROLL display, window unit (seconds or beats), and window size. Autoplay controls whether the deck advances to the next queued track at the end; the crossfade duration controls how early that next track starts.
 
 ### Desktop (Linux / Windows)
 
@@ -110,7 +111,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 | FX (deck/master) | Open that rack's FX overlay. INSERT edits the serial chain; PUNCH edits the ordered pad rack. |
 | PUNCH pads | Hold (or latch) a pad to send the selected rack through that effect. |
 | Spectrum | Master mix spectrum in the mixer; pre/post deck spectra in the EQ editor. |
-| SETTINGS | Autoplay A/B and crossfade-duration settings; on desktop, also library folders. Persisted across launches. |
+| SETTINGS | Appearance theme, Autoplay A/B, auto-crossfade, and waveform settings; on desktop, also library folders. Persisted across launches. |
 | TEMPO | 50%–200% playback rate. Tap `0` to reset to 0%. |
 | SYNC | Match the other deck’s effective BPM, analyze BPM on demand if needed, and enable key lock. |
 | KEY | Enables WSOLA key lock; tempo changes no longer repitch. |
@@ -143,6 +144,7 @@ app/src/main/java/com/tkleisas/scratchdj/
   data/                    MediaStore scan, SQLite DB, repository, queue
   model/                   DeckSide, DeckUiState
   ui/                      Compose screens, platters, waveforms, FX overlay/pads
+  ui/theme/                Classic, High Contrast, Midnight, and Ember palettes
   PlaybackService.kt       Foreground playback notification and audio focus
 app/src/main/cpp/
   jni_bridge.cpp           JNI entry points and engine lifetime
@@ -329,7 +331,7 @@ Device tests (18 cases, real device or emulator):
 ./gradlew connectedDebugAndroidTest
 ```
 
-Covers SQLite track search/BPM/EQ/queue preset persistence, SharedPreferences settings persistence, the MediaCodec MP3 decode, in-memory and disk-cache decoding, mmap-backed JNI loading, waveform generation, and native BPM analysis. Note that `connectedDebugAndroidTest` may uninstall the app when it finishes; reinstall the debug APK afterwards.
+Covers SQLite track search/BPM/EQ/queue preset persistence, SharedPreferences settings/theme persistence, the MediaCodec MP3 decode, in-memory and disk-cache decoding, mmap-backed JNI loading, waveform generation, and native BPM analysis. Note that `connectedDebugAndroidTest` may uninstall the app when it finishes; reinstall the debug APK afterwards.
 
 Desktop JVM tests (3 cases):
 

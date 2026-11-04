@@ -26,6 +26,7 @@ import com.tkleisas.scratchdj.model.FxRackState
 import com.tkleisas.scratchdj.model.WaveformMode
 import com.tkleisas.scratchdj.model.WaveformWindowMath
 import com.tkleisas.scratchdj.model.WaveformWindowUnit
+import com.tkleisas.scratchdj.ui.theme.ScratchThemeName
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -90,6 +91,13 @@ class DjController {
     val autoplayA = mutableStateOf(preferences.getBoolean("autoplay_a", true))
     val autoplayB = mutableStateOf(preferences.getBoolean("autoplay_b", true))
     val crossfadeSeconds = mutableFloatStateOf(preferences.getFloat("crossfade_seconds", 0f))
+    val theme = mutableStateOf(
+        runCatching {
+            ScratchThemeName.valueOf(
+                preferences.get("theme", ScratchThemeName.Classic.name),
+            )
+        }.getOrDefault(ScratchThemeName.Classic),
+    )
     val waveformMode = mutableStateOf(
         runCatching {
             WaveformMode.valueOf(
@@ -981,6 +989,11 @@ class DjController {
         crossfader.floatValue = value
         DjEngine.setCrossfader(value)
         updateFxTempo()
+    }
+
+    fun setTheme(value: ScratchThemeName) {
+        theme.value = value
+        preferences.put("theme", value.name)
     }
 
     fun toggleWaveformMode() {
