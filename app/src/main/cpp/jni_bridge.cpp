@@ -688,4 +688,17 @@ Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetPunchSend(
     return gEngine ? gEngine->GetFxRack(rack).GetPunchSend(effect) : 0.0f;
 }
 
+
+JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeSetFxTempo(
+    JNIEnv*, jobject, jint rack, jfloat bpm) {
+    if (!ValidFxRack(rack)) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gEngine) {
+        gEngine->GetFxRack(rack).SetTempo(bpm);
+    }
+}
+
 }

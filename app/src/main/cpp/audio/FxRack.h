@@ -42,6 +42,7 @@ public:
 
     void SetPunchActive(int effect, bool active);
     void SetPunchSend(int effect, float send);
+    void SetTempo(double bpm);
     float GetPunchSend(int effect) const;
     bool PunchActive(int effect) const;
 
@@ -83,6 +84,7 @@ private:
     std::vector<float> dryInput_;
     std::vector<float> punchScratch_;
     double sampleRate_ = 48000.0;
+    std::atomic<double> tempoBpm_{120.0};
     int maxBlockSize_ = 4096;
     bool ready_ = false;
 };

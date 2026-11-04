@@ -87,6 +87,7 @@ class DjController {
         }
         DjEngine.setCrossfader(crossfader.value)
         applyFxState()
+        updateFxTempo()
         scope.launch { pollEngine() }
     }
 
@@ -334,6 +335,7 @@ class DjController {
                 if (generation == currentGeneration(side) && holder.value.track?.id == track.id) {
                     holder.value = holder.value.copy(bpm = bpm)
                 }
+                updateFxTempo()
             }
         }
     }
@@ -444,6 +446,7 @@ class DjController {
         val holder = deck(side)
         holder.value = holder.value.copy(tempo = value)
         DjEngine.setTempo(side.index, value)
+        updateFxTempo()
     }
 
     fun toggleKeyLock(side: DeckSide) {
@@ -488,6 +491,7 @@ class DjController {
             if (otherBpm > 0f && otherHolder.value.track?.id == other.track?.id) {
                 otherHolder.value = otherHolder.value.copy(bpm = otherBpm)
             }
+            updateFxTempo()
             if (thisBpm > 0f && otherBpm > 0f) {
                 applySync(side)
             } else {
@@ -702,6 +706,7 @@ class DjController {
     fun setCrossfader(value: Float) {
         crossfader.floatValue = value
         DjEngine.setCrossfader(value)
+        updateFxTempo()
     }
 
     fun scratchBegin(side: DeckSide) {
@@ -809,6 +814,22 @@ class DjController {
             DjEngine.setPunchActive(rack.ordinal, effect.ordinal, false)
         }
         fxPadActive.value = emptySet()
+    }
+
+
+    private fun updateFxTempo() {
+        val a = deckA.value
+        val b = deckB.value
+        val aBpm = if (a.bpm > 0f) a.bpm * a.tempo else 0f
+        val bBpm = if (b.bpm > 0f) b.bpm * b.tempo else 0f
+        if (aBpm > 0f) DjEngine.setFxTempo(0, aBpm)
+        if (bBpm > 0f) DjEngine.setFxTempo(1, bBpm)
+        val masterBpm = if (crossfader.floatValue < 0.5f) {
+            if (aBpm > 0f) aBpm else bBpm
+        } else {
+            if (bBpm > 0f) bBpm else aBpm
+        }
+        if (masterBpm > 0f) DjEngine.setFxTempo(2, masterBpm)
     }
 
     private fun persistFx() {

@@ -75,6 +75,8 @@ object DjEngine {
     fun setPunchSend(rack: Int, effect: Int, send: Float) =
         nativeSetPunchSend(rack, effect, send)
 
+    fun setFxTempo(rack: Int, bpm: Float) = nativeSetFxTempo(rack, bpm)
+
     fun getPunchSend(rack: Int, effect: Int): Float =
         nativeGetPunchSend(rack, effect)
 
@@ -144,6 +146,7 @@ object DjEngine {
     private external fun nativeGetFxParamCount(rack: Int, chain: Int, effect: Int): Int
     private external fun nativeSetPunchActive(rack: Int, effect: Int, active: Boolean)
     private external fun nativeSetPunchSend(rack: Int, effect: Int, send: Float)
+    private external fun nativeSetFxTempo(rack: Int, bpm: Float)
     private external fun nativeGetPunchSend(rack: Int, effect: Int): Float
 
     private external fun nativeSetFilterMode(deck: Int, mode: Int)

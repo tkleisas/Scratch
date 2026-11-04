@@ -63,6 +63,7 @@ class DjController(private val context: Context) {
     private var loadJobB: Job? = null
     private var loadGenerationA = 0
     private var loadGenerationB = 0
+    private var lastPlaybackState = false
     private val decodeMutex = Mutex()
     private var prefetchA: Prefetch? = null
     private var prefetchB: Prefetch? = null
@@ -93,6 +94,7 @@ class DjController(private val context: Context) {
         }
         DjEngine.setCrossfader(crossfader.value)
         applyFxState()
+        updateFxTempo()
         scope.launch(Dispatchers.IO) { PcmCache.prune(context) }
         scope.launch(Dispatchers.IO) {
             val names = presetStore.names()
@@ -345,6 +347,7 @@ class DjController(private val context: Context) {
                     if (track.bpm <= 0f) {
                         analyzeBpm(side, track, generation)
                     }
+                    updateFxTempo()
                     schedulePrefetch(side)
                 }
 
@@ -448,6 +451,20 @@ class DjController(private val context: Context) {
         while (scope.isActive) {
             updateDeckState(DeckSide.A)
             updateDeckState(DeckSide.B)
+            val anyPlaying = anyDeckPlaying()
+            if (anyPlaying != lastPlaybackState) {
+                lastPlaybackState = anyPlaying
+                if (anyPlaying) {
+                    try {
+                        PlaybackService.start(context)
+                    } catch (_: Throwable) {
+                        // Background-start restrictions can reject this; the
+                        // in-app playback path still works.
+                    }
+                } else {
+                    PlaybackService.stop(context)
+                }
+            }
 
             if (DjEngine.consumeEnded(DeckSide.A.index)) {
                 if (!autoplayA.value || !advanceQueue(DeckSide.A)) {
@@ -678,6 +695,7 @@ class DjController(private val context: Context) {
         val holder = deck(side)
         holder.value = holder.value.copy(tempo = value)
         DjEngine.setTempo(side.index, value)
+        updateFxTempo()
     }
 
     fun toggleKeyLock(side: DeckSide) {
@@ -803,6 +821,7 @@ class DjController(private val context: Context) {
             if (otherBpm > 0f && otherHolder.value.track?.id == other.track?.id) {
                 otherHolder.value = otherHolder.value.copy(bpm = otherBpm)
             }
+            updateFxTempo()
             if (thisBpm > 0f && otherBpm > 0f) {
                 applySync(side)
             } else {
@@ -843,6 +862,7 @@ class DjController(private val context: Context) {
                 ) {
                     holder.value = holder.value.copy(bpm = bpm)
                 }
+                updateFxTempo()
             }
         }
     }
@@ -866,6 +886,7 @@ class DjController(private val context: Context) {
     fun setCrossfader(value: Float) {
         crossfader.floatValue = value
         DjEngine.setCrossfader(value)
+        updateFxTempo()
     }
 
     fun scratchBegin(side: DeckSide) {
@@ -880,6 +901,16 @@ class DjController(private val context: Context) {
 
     fun scratchEnd(side: DeckSide) {
         DjEngine.scratchEnd(side.index)
+    }
+
+    fun anyDeckPlaying(): Boolean =
+        DjEngine.isPlaying(DeckSide.A.index) || DjEngine.isPlaying(DeckSide.B.index)
+
+    fun pauseAllForAudioFocus() {
+        DjEngine.setPlaying(DeckSide.A.index, false)
+        DjEngine.setPlaying(DeckSide.B.index, false)
+        deckA.value = deckA.value.copy(isPlaying = false)
+        deckB.value = deckB.value.copy(isPlaying = false)
     }
 
     fun shutdown() {
@@ -981,6 +1012,22 @@ class DjController(private val context: Context) {
             DjEngine.setPunchActive(rack.ordinal, effect.ordinal, false)
         }
         fxPadActive.value = emptySet()
+    }
+
+
+    private fun updateFxTempo() {
+        val a = deckA.value
+        val b = deckB.value
+        val aBpm = if (a.bpm > 0f) a.bpm * a.tempo else 0f
+        val bBpm = if (b.bpm > 0f) b.bpm * b.tempo else 0f
+        if (aBpm > 0f) DjEngine.setFxTempo(0, aBpm)
+        if (bBpm > 0f) DjEngine.setFxTempo(1, bBpm)
+        val masterBpm = if (crossfader.floatValue < 0.5f) {
+            if (aBpm > 0f) aBpm else bBpm
+        } else {
+            if (bBpm > 0f) bBpm else aBpm
+        }
+        if (masterBpm > 0f) DjEngine.setFxTempo(2, masterBpm)
     }
 
     private fun persistFx() {

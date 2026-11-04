@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemBars()
-        controller = DjController(applicationContext)
+        controller = (application as ScratchApplication).controller
         setContent {
             ScratchTheme {
                 ScratchRoot(controller)
@@ -67,7 +67,6 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        controller.shutdown()
         super.onDestroy()
     }
 }
@@ -78,6 +77,11 @@ private fun ScratchRoot(controller: DjController) {
     val lifecycleOwner = LocalLifecycleOwner.current
     var granted by remember { mutableStateOf(hasAudioPermission(context)) }
     var requestedOnce by rememberSaveable { mutableStateOf(false) }
+    var notificationRequested by rememberSaveable { mutableStateOf(false) }
+
+    val notificationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { notificationRequested = true }
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -105,6 +109,15 @@ private fun ScratchRoot(controller: DjController) {
     LaunchedEffect(granted) {
         if (granted) {
             controller.syncLibrary()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                !notificationRequested &&
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
     }
 

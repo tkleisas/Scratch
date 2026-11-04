@@ -174,6 +174,12 @@ int FxRack::ParamCount(Chain chain, int effect) const {
     return chains_[chain].nodes[effect].paramCount;
 }
 
+void FxRack::SetTempo(double bpm) {
+    if (bpm > 0.0) {
+        tempoBpm_.store(bpm, std::memory_order_relaxed);
+    }
+}
+
 void FxRack::SetPunchActive(int effect, bool active) {
     if (effect < 0 || effect >= kEffectCount) {
         return;
@@ -221,6 +227,9 @@ void FxRack::ApplyParams(Node& node, bool punch) {
         node.effect->setParameter(node.mixParam, 1.0f);
     }
     node.effect->setBypassed(false);
+    if (node.type == kEcho) {
+        node.effect->setTempo(tempoBpm_.load(std::memory_order_relaxed), 0.0, false);
+    }
 }
 
 void FxRack::Process(float* interleavedStereo, int frames) {

@@ -22,6 +22,7 @@ This is an early development build, exercised on a physical Android 15 device an
 
 - Immersive full-screen landscape UI with dual rotating platters, waveforms, and a center mixer.
 - Oboe audio engine: one 48 kHz float output stream, low-latency performance mode, exclusive mode attempted first with shared-mode fallback, and automatic stream reopen after device disconnects.
+- Android audio focus and a foreground playback service with an ongoing notification and Pause action; playback keeps running when the app is backgrounded.
 - WAV and AIFF/AIFC (uncompressed) playback: 8/16/24/32-bit PCM, 32-bit float WAV, mono or stereo, including AIFC `NONE`/`sowt`.
 - MP3, FLAC, OGG/Vorbis, and Opus decoding through `MediaExtractor` + `MediaCodec`.
 - Long compressed tracks are decoded once into a 16-bit stereo PCM cache, then memory-mapped into the native engine. A 59:57 mix works with instant seeking and scratching anywhere in the track; the cache is reused on later loads.
@@ -42,7 +43,7 @@ This is an early development build, exercised on a physical Android 15 device an
 - Tempo SYNC matches the other deck’s effective BPM (including its tempo shift) and enables key lock automatically. Missing BPMs are analyzed on demand when SYNC is pressed, with progress and result feedback.
 - Tempo reset: tap the `0` next to SYNC to return pitch to 0% instantly.
 - Looping: one-tap LOOP creates and enables a 4-second loop at the playhead. IN sets the loop start without engaging the loop; OUT sets the end and starts looping. CLR clears. A pending IN point is drawn on the waveform. Key-locked playback wraps the stretcher source at the loop seam instead of resetting it, so loops stay continuous.
-- Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, plate reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves.
+- Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, plate reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves. Echo tempo sync follows the effective BPM of its rack's deck (the master rack follows the active crossfader side).
 - Waveforms computed from 2048 peak buckets at load and normalized for display.
 - Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards.
 - Search overlay with one-tap add to Deck A or Deck B queues.
@@ -80,7 +81,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 - The first load of a very long compressed track takes time (about two minutes for an hour-long MP3 on the test phone) while it decodes into the cache. Subsequent loads are fast. The PCM cache is capped at 3 GB and pruned at startup.
 - BPM is analyzed the first time a track is loaded, or on demand when SYNC is pressed. It is not a full library pre-analysis pass yet. Tempo SYNC does not phase/downbeat-align decks yet; beatgrid sync is next.
 - Cue points, hot cues, and slip mode are not implemented.
-- No audio focus, foreground playback service, or notification controls yet.
+- Playback notifications currently expose Pause/stop only; a full media session with lock-screen controls and resume is not implemented.
 - True overlapping crossfade is not implemented yet; the crossfade duration is persisted, but it needs a second playback source per deck. Autoplay currently advances with the deck’s normal fade-in.
 - Reported latency on the test phone varies between roughly 40–125 ms depending on the callback; Bluetooth output is not suitable for DJ use.
 - The search keyboard floats over the results on some IMEs; the A/B queue buttons are deliberately kept on the left so they stay reachable.
@@ -88,7 +89,6 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 - The desktop UI is adapted from the Android UI rather than rendered from a shared Compose module yet.
 - The release workflow publishes a debug-signed APK until Android release signing secrets are configured; the locally signed AAB is built with the key in `~/.volna/keystore.properties`.
 - Punch effects use a hybrid topology: Echo, Reverb, Filter, Crush, and Tape are parallel sends (tails survive pad release), while Compressor and Limiter use a serial insert path so punching them changes the main signal's dynamics. Punch sends tap the signal after the INSERT chain, so insert effects color the punch sound. PUNCH ordering controls pad layout and the serial order of punched dynamics; the INSERT chain order controls the always-on serial chain.
-- Echo tempo sync currently uses the effect's internal 120 BPM default; per-deck BPM is not pushed into the FX racks yet.
 - FX parameters are applied per audio block; automation, modulation, and named FX presets are not implemented yet.
 
 ## Controls
@@ -139,6 +139,7 @@ app/src/main/java/com/tkleisas/scratchdj/
   data/                    MediaStore scan, SQLite DB, repository, queue
   model/                   DeckSide, DeckUiState
   ui/                      Compose screens, platters, waveforms, FX overlay/pads
+  PlaybackService.kt       Foreground playback notification and audio focus
 app/src/main/cpp/
   jni_bridge.cpp           JNI entry points and engine lifetime
   audio/AudioEngine.*      Oboe stream, mixing, crossfader, mastering
@@ -340,7 +341,7 @@ Both jobs pin JDK 17, Android SDK 36, and NDK `27.2.12479018`.
 1. Extract the Compose deck UI into a shared `:ui` Compose Multiplatform module so Android and desktop run the exact same screen code.
 2. Full-library background analysis, beatgrid/downbeat detection, and phase-aligned SYNC.
 3. Cue points, hot cues, and slip mode.
-4. FX presets, automation, and tempo-synced echo; embedded libav, JACK/PipeWire backend, and AppImage/Flatpak packaging.
+4. FX presets and automation; embedded libav, JACK/PipeWire backend, and AppImage/Flatpak packaging.
 5. Disk-backed WAV/AIFF support and a cache-size/usage UI.
 6. Foreground service, audio focus, media session, and notification controls.
 7. Master limiter, vinyl wow/flutter, and better anti-aliasing at extreme scratch rates.
