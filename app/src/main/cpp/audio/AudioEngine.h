@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,8 @@ public:
 
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream* stream, void* audioData,
                                           int32_t numFrames) override;
+    void onErrorBeforeClose(oboe::AudioStream* stream, oboe::Result error) override;
+    void onErrorAfterClose(oboe::AudioStream* stream, oboe::Result error) override;
 
     Deck& GetDeck(int index);
     FxRack& GetFxRack(int index);
@@ -36,6 +39,7 @@ private:
     bool OpenStream(std::string& error, oboe::SharingMode sharingMode);
 
     std::shared_ptr<oboe::AudioStream> stream_;
+    std::mutex streamMutex_;
 
     Deck decks_[2];
     FxRack fxRacks_[3];

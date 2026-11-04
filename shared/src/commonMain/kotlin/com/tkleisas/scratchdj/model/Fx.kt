@@ -95,6 +95,7 @@ enum class FxEffect(
     val params: List<FxParamSpec>,
     val mixParamIndex: Int = -1,
     val defaultSend: Float = 0.35f,
+    val punchAmountLabel: String = "Send",
 ) {
     Filter(
         label = "Filter",
@@ -171,7 +172,8 @@ enum class FxEffect(
             FxParamSpec("Makeup", 0f, 24f, 0f, FxValueFormat.Decibels),
             FxParamSpec("Knee", 0f, 12f, 6f, FxValueFormat.Decibels),
         ),
-        defaultSend = 0.5f,
+        defaultSend = 1.0f,
+        punchAmountLabel = "Mix",
     ),
     Limiter(
         label = "Limiter",
@@ -181,7 +183,8 @@ enum class FxEffect(
             FxParamSpec("Release", 1f, 1000f, 50f, FxValueFormat.Milliseconds, logarithmic = true),
             FxParamSpec("Lookahead", 0f, 20f, 5f, FxValueFormat.Milliseconds),
         ),
-        defaultSend = 0.5f,
+        defaultSend = 1.0f,
+        punchAmountLabel = "Mix",
     );
 
     fun defaultParams(punch: Boolean): List<Float> = params.mapIndexed { index, spec ->

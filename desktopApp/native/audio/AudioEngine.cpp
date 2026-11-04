@@ -92,14 +92,16 @@ void AudioEngine::RenderLoop() {
 
     while (running_.load(std::memory_order_relaxed)) {
         const float targetCrossfader = crossfader_.load(std::memory_order_relaxed);
+        const float previousCrossfader = crossfaderSmoothed_;
         crossfaderSmoothed_ += (targetCrossfader - crossfaderSmoothed_) * 0.25f;
-        const StereoGains gains = EqualPowerGains(crossfaderSmoothed_);
+        const StereoGains gainsStart = EqualPowerGains(previousCrossfader);
+        const StereoGains gainsEnd = EqualPowerGains(crossfaderSmoothed_);
 
         for (int deck = 0; deck < 2; ++deck) {
             std::fill(deckScratch_[deck].begin(), deckScratch_[deck].begin() + frames * 2, 0.0f);
         }
-        decks_[0].Render(deckScratch_[0].data(), frames, gains.a, 48000);
-        decks_[1].Render(deckScratch_[1].data(), frames, gains.b, 48000);
+        decks_[0].Render(deckScratch_[0].data(), frames, gainsStart.a, 48000, gainsEnd.a);
+        decks_[1].Render(deckScratch_[1].data(), frames, gainsStart.b, 48000, gainsEnd.b);
         fxRacks_[0].Process(deckScratch_[0].data(), frames);
         fxRacks_[1].Process(deckScratch_[1].data(), frames);
 

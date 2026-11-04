@@ -76,12 +76,46 @@ bool AudioEngine::Start(std::string& error) {
 }
 
 void AudioEngine::Stop() {
+    std::lock_guard<std::mutex> lock(streamMutex_);
     if (!stream_) {
         return;
     }
     stream_->requestStop();
     stream_->close();
     stream_.reset();
+}
+
+void AudioEngine::onErrorBeforeClose(oboe::AudioStream*, oboe::Result) {}
+
+void AudioEngine::onErrorAfterClose(oboe::AudioStream* stream, oboe::Result) {
+    std::lock_guard<std::mutex> lock(streamMutex_);
+    if (!stream_ || stream != stream_.get()) {
+        return;
+    }
+
+    // Oboe has already stopped and closed the underlying stream. Reopen on
+    // the new default device (headphone/BT/SCO change) and keep rendering.
+    stream_.reset();
+    std::string error;
+    if (!OpenStream(error, oboe::SharingMode::Exclusive) &&
+        !OpenStream(error, oboe::SharingMode::Shared)) {
+        return;
+    }
+
+    const int newRate = stream_->getSampleRate();
+    if (newRate > 0 && newRate != sampleRate_.load(std::memory_order_relaxed)) {
+        sampleRate_.store(newRate, std::memory_order_relaxed);
+        decks_[0].PrepareForSampleRate(newRate);
+        decks_[1].PrepareForSampleRate(newRate);
+        spectrum_.Init(newRate);
+        for (auto& rack : fxRacks_) {
+            rack.Init(newRate, 16384);
+        }
+    }
+    if (stream_->requestStart() != oboe::Result::OK) {
+        stream_->close();
+        stream_.reset();
+    }
 }
 
 oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* stream, void* audioData,
@@ -96,15 +130,17 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* stream, vo
     std::memset(output, 0, sizeof(float) * static_cast<size_t>(numFrames) * 2);
 
     const float targetCrossfader = crossfader_.load(std::memory_order_relaxed);
+    const float previousCrossfader = crossfaderSmoothed_;
     crossfaderSmoothed_ += (targetCrossfader - crossfaderSmoothed_) * 0.25f;
-    const StereoGains gains = EqualPowerGains(crossfaderSmoothed_);
+    const StereoGains gainsStart = EqualPowerGains(previousCrossfader);
+    const StereoGains gainsEnd = EqualPowerGains(crossfaderSmoothed_);
     const int sampleRate = stream->getSampleRate();
 
     for (int deck = 0; deck < 2; ++deck) {
         std::fill(deckScratch_[deck].begin(), deckScratch_[deck].begin() + frames * 2, 0.0f);
     }
-    decks_[0].Render(deckScratch_[0].data(), frames, gains.a, sampleRate);
-    decks_[1].Render(deckScratch_[1].data(), frames, gains.b, sampleRate);
+    decks_[0].Render(deckScratch_[0].data(), frames, gainsStart.a, sampleRate, gainsEnd.a);
+    decks_[1].Render(deckScratch_[1].data(), frames, gainsStart.b, sampleRate, gainsEnd.b);
     fxRacks_[0].Process(deckScratch_[0].data(), frames);
     fxRacks_[1].Process(deckScratch_[1].data(), frames);
 

@@ -87,3 +87,27 @@ TEST(FxRack, PunchEchoProducesOutputAfterRelease) {
     }
     EXPECT_GT(rms(buffer), 1e-5f);
 }
+
+TEST(FxRack, PunchLimiterActsAsSerialInsert) {
+    FxRack rack;
+    rack.Init(kSampleRate, 2048);
+    rack.SetEnabled(FxRack::kPunch, FxRack::kLimiter, true);
+    rack.SetParam(FxRack::kPunch, FxRack::kLimiter, 0, -6.0f);
+    rack.SetPunchSend(FxRack::kLimiter, 1.0f);
+    rack.SetPunchActive(FxRack::kLimiter, true);
+
+    std::vector<float> buffer(kFrames * 2);
+    float peak = 0.0f;
+    for (int block = 0; block < 8; ++block) {
+        fillSine(buffer, 1000.0f, 0.8f);
+        rack.Process(buffer.data(), kFrames);
+        if (block == 7) {
+            for (float sample : buffer) {
+                peak = std::max(peak, std::fabs(sample));
+            }
+        }
+    }
+    // The limiter ceiling is -6 dBFS (~0.5). A parallel send would leave
+    // the dry 0.8 peak in place; the serial path must reduce it.
+    EXPECT_LT(peak, 0.75f);
+}

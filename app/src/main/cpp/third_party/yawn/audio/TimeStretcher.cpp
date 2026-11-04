@@ -151,10 +151,14 @@ int TimeStretcher::processWSOLA(const float* input, int inputAvailable,
         for (int i = 0; i < m_wsolaWindowSize; ++i) {
             float sample = input[readPos + i];
 
-            // Apply overlap with previous window's tail
+            // Equal-power overlap-add. A linear crossfade dips on weakly
+            // correlated material; sin/cos keeps the summed power constant.
             if (i < m_wsolaOverlapSize && m_wsolaOutputWritten > 0) {
-                float fadeOut = 1.0f - static_cast<float>(i) / m_wsolaOverlapSize;
-                float fadeIn = static_cast<float>(i) / m_wsolaOverlapSize;
+                const float t = (static_cast<float>(i) + 0.5f) /
+                                static_cast<float>(m_wsolaOverlapSize);
+                const float angle = t * 1.57079632679489661923f;
+                const float fadeIn = std::sin(angle);
+                const float fadeOut = std::cos(angle);
                 sample = m_overlapBuffer[i] * fadeOut + sample * fadeIn;
             }
 

@@ -360,10 +360,10 @@ void Deck::PushStretchFrames(const float* left, const float* right, int frames) 
     }
 }
 
-bool Deck::UpdateFilters(int outputSampleRate) {
+bool Deck::UpdateFilters(int outputSampleRate, float smoothing) {
     const int mode = filterMode_.load(std::memory_order_relaxed);
     filterCutoffSmoothed_ +=
-        (filterCutoff_.load(std::memory_order_relaxed) - filterCutoffSmoothed_) * 0.25f;
+        (filterCutoff_.load(std::memory_order_relaxed) - filterCutoffSmoothed_) * smoothing;
     const float normalized = std::clamp(filterCutoffSmoothed_, 0.0f, 1.0f);
     const float cutoff = std::clamp(
         20.0f * std::pow(1000.0f, normalized), 20.0f, outputSampleRate * 0.49f);
@@ -372,12 +372,15 @@ bool Deck::UpdateFilters(int outputSampleRate) {
     svfRight_.Set(cutoff, q, static_cast<float>(outputSampleRate));
 
     const float targetWet = mode == 0 ? 0.0f : 1.0f;
-    filterWet_ += (targetWet - filterWet_) * 0.25f;
+    filterWet_ += (targetWet - filterWet_) * smoothing;
     return mode == 2;
 }
 
 void Deck::Render(float* interleavedStereoOut, int32_t frames, float mixGain,
-                  int32_t outputSampleRate) {
+                  int32_t outputSampleRate, float mixGainEnd) {
+    if (mixGainEnd < 0.0f) {
+        mixGainEnd = mixGain;
+    }
     AdoptPendingTrack();
     if (current_ == nullptr || frames <= 0 || outputSampleRate <= 0) {
         envelope_ = 0.0f;
@@ -412,7 +415,8 @@ void Deck::Render(float* interleavedStereoOut, int32_t frames, float mixGain,
             PrepareStretchers(outputSampleRate);
             ResetStretch(positionFrames_.load(std::memory_order_relaxed));
         }
-        RenderStretched(interleavedStereoOut, frames, mixGain, outputSampleRate);
+        RenderStretched(interleavedStereoOut, frames, mixGain, mixGainEnd,
+                        outputSampleRate);
         return;
     }
 
@@ -420,7 +424,7 @@ void Deck::Render(float* interleavedStereoOut, int32_t frames, float mixGain,
         stretchActive_ = false;
         ResetStretch(positionFrames_.load(std::memory_order_relaxed));
     }
-    RenderRaw(interleavedStereoOut, frames, mixGain, outputSampleRate);
+    RenderRaw(interleavedStereoOut, frames, mixGain, mixGainEnd, outputSampleRate);
 }
 
 void Deck::UpdateEq(int outputSampleRate) {
@@ -508,7 +512,7 @@ void Deck::GetEqResponse(float* out, int count) const {
 }
 
 void Deck::RenderRaw(float* interleavedStereoOut, int32_t frames, float mixGain,
-                     int32_t outputSampleRate) {
+                     float mixGainEnd, int32_t outputSampleRate) {
     const int64_t trackFrames = current_->frames;
     if (trackFrames <= 0 ||
         (current_->samples.empty() && current_->pcm16.empty() && !current_->mapped)) {
@@ -526,15 +530,19 @@ void Deck::RenderRaw(float* interleavedStereoOut, int32_t frames, float mixGain,
 
     const float envelopeCoefficient = 1.0f - std::exp(-1.0f / (0.004f * outputSampleRate));
     const float rateCoefficient = 1.0f - std::exp(-1.0f / (0.006f * outputSampleRate));
-    const bool highPass = UpdateFilters(outputSampleRate);
     UpdateEq(outputSampleRate);
 
     gainSmoothed_ += (gain_.load(std::memory_order_relaxed) - gainSmoothed_) * 0.2f;
 
     double position = static_cast<double>(positionFrames_.load(std::memory_order_relaxed));
-    const float outputGain = mixGain * gainSmoothed_;
+    const float mixStep = (mixGainEnd - mixGain) / static_cast<float>(frames);
+    float mix = mixGain;
+    bool highPass = false;
 
     for (int32_t i = 0; i < frames; ++i) {
+        if ((i & 15) == 0) {
+            highPass = UpdateFilters(outputSampleRate, 0.02f);
+        }
         const bool scratch = scratchActive_.load(std::memory_order_relaxed);
         const bool playing = playing_.load(std::memory_order_relaxed);
         const float targetRate = scratch
@@ -584,9 +592,10 @@ void Deck::RenderRaw(float* interleavedStereoOut, int32_t frames, float mixGain,
         const float right = eqRight * (1.0f - filterWet_) + wetRight * filterWet_;
 
         const float scratchGain = scratch ? std::min(1.0f, std::fabs(rate_)) : 1.0f;
-        const float gain = envelope_ * outputGain * scratchGain;
+        const float gain = envelope_ * mix * gainSmoothed_ * scratchGain;
         interleavedStereoOut[static_cast<size_t>(i) * 2] += left * gain;
         interleavedStereoOut[static_cast<size_t>(i) * 2 + 1] += right * gain;
+        mix += mixStep;
 
         position += static_cast<double>(rate_) * stepScale;
         if (position < 0.0) {
@@ -606,7 +615,7 @@ void Deck::RenderRaw(float* interleavedStereoOut, int32_t frames, float mixGain,
 }
 
 void Deck::RenderStretched(float* interleavedStereoOut, int32_t frames, float mixGain,
-                           int32_t outputSampleRate) {
+                           float mixGainEnd, int32_t outputSampleRate) {
     const int64_t trackFrames = current_->frames;
     if (trackFrames <= 0 ||
         (current_->samples.empty() && current_->pcm16.empty() && !current_->mapped) ||
@@ -709,14 +718,18 @@ void Deck::RenderStretched(float* interleavedStereoOut, int32_t frames, float mi
     }
 
     const int available = std::min(frames, stretchFifoCount_);
-    const bool highPass = UpdateFilters(outputSampleRate);
     UpdateEq(outputSampleRate);
     gainSmoothed_ += (gain_.load(std::memory_order_relaxed) - gainSmoothed_) * 0.2f;
     const float envelopeCoefficient =
         1.0f - std::exp(-1.0f / (0.004f * outputSampleRate));
-    const float outputGain = mixGain * gainSmoothed_;
+    const float mixStep = (mixGainEnd - mixGain) / static_cast<float>(frames);
+    float mix = mixGain;
+    bool highPass = false;
 
     for (int32_t i = 0; i < frames; ++i) {
+        if ((i & 15) == 0) {
+            highPass = UpdateFilters(outputSampleRate, 0.02f);
+        }
         float left = 0.0f;
         float right = 0.0f;
         if (i < available) {
@@ -738,9 +751,10 @@ void Deck::RenderStretched(float* interleavedStereoOut, int32_t frames, float mi
         left = left * (1.0f - filterWet_) + wetLeft * filterWet_;
         right = right * (1.0f - filterWet_) + wetRight * filterWet_;
 
-        const float gain = envelope_ * outputGain;
+        const float gain = envelope_ * mix * gainSmoothed_;
         interleavedStereoOut[static_cast<size_t>(i) * 2] += left * gain;
         interleavedStereoOut[static_cast<size_t>(i) * 2 + 1] += right * gain;
+        mix += mixStep;
     }
 
     double position = static_cast<double>(positionFrames_.load(std::memory_order_relaxed)) +

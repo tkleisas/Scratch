@@ -238,7 +238,8 @@ private fun FxEffectCard(
             )
             if (chain == FxChain.Punch) {
                 Text(
-                    text = "SEND ${(send * 100f).roundToInt()}%",
+                    text = "${effect.punchAmountLabel.uppercase()} " +
+                        "${(send * 100f).roundToInt()}%",
                     color = ScratchOutline,
                     fontSize = 7.sp,
                     fontFamily = FontFamily.Monospace,
@@ -261,7 +262,12 @@ private fun FxEffectCard(
                 verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
                 if (chain == FxChain.Punch) {
-                    FxSendRow(send, accent, onSend)
+                    FxSendRow(
+                        label = effect.punchAmountLabel,
+                        send = send,
+                        accent = accent,
+                        onChange = onSend,
+                    )
                 }
                 effect.params.forEachIndexed { index, spec ->
                     if (chain == FxChain.Punch && index == effect.mixParamIndex) {
@@ -280,13 +286,18 @@ private fun FxEffectCard(
 }
 
 @Composable
-private fun FxSendRow(send: Float, accent: Color, onChange: (Float) -> Unit) {
+private fun FxSendRow(
+    label: String,
+    send: Float,
+    accent: Color,
+    onChange: (Float) -> Unit,
+) {
     Column(Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("Send", color = ScratchOutline, fontSize = 8.sp)
+            Text(label, color = ScratchOutline, fontSize = 8.sp)
             Text(
                 text = "${(send * 100f).roundToInt()}%",
                 color = accent,

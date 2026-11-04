@@ -15,6 +15,10 @@
 namespace {
 constexpr int kOrderShift = 8;
 constexpr uint64_t kOrderMask = 0xFF;
+
+bool IsDynamics(int type) {
+    return type == FxRack::kCompressor || type == FxRack::kLimiter;
+}
 }
 
 uint64_t FxRack::PackOrder(const int* order) {
@@ -260,7 +264,14 @@ void FxRack::ProcessPunch(const float* dry, float* buffer, int frames) {
     ChainState& chain = chains_[kPunch];
     const uint32_t enabled = chain.enabledMask.load(std::memory_order_relaxed);
 
+    // Parallel sends: Echo, Reverb, Filter, Crush, and Tape add their
+    // processed output to the main buffer. Compressor and Limiter use a
+    // serial insert path below so punching them actually changes the
+    // dynamics of the main signal.
     for (int effect = 0; effect < kEffectCount; ++effect) {
+        if (IsDynamics(effect)) {
+            continue;
+        }
         Node& node = chain.nodes[effect];
         if (!node.effect || (enabled & (1u << effect)) == 0) {
             node.returnGain = 0.0f;
@@ -311,6 +322,53 @@ void FxRack::ProcessPunch(const float* dry, float* buffer, int frames) {
             gain += step;
             buffer[frame * 2] += punchScratch_[frame * 2] * gain;
             buffer[frame * 2 + 1] += punchScratch_[frame * 2 + 1] * gain;
+        }
+        node.returnGain = target;
+    }
+
+    // Serial punch dynamics, applied in the configured punch order. The
+    // send amount becomes a dry/processed blend; at 100% the compressor
+    // or limiter acts as a real insert on the main signal.
+    const uint64_t order = chain.order.load(std::memory_order_relaxed);
+    for (int position = 0; position < kEffectCount; ++position) {
+        const int effect = static_cast<int>(
+            (order >> (position * kOrderShift)) & kOrderMask) - 1;
+        if (effect < 0 || effect >= kEffectCount || !IsDynamics(effect)) {
+            continue;
+        }
+        Node& node = chain.nodes[effect];
+        if (!node.effect || (enabled & (1u << effect)) == 0) {
+            node.returnGain = 0.0f;
+            node.tailRemaining = 0;
+            node.wasActive = false;
+            continue;
+        }
+
+        const bool active = node.padActive.load(std::memory_order_relaxed);
+        const float sendLevel = node.send.load(std::memory_order_relaxed);
+        const float target = active ? sendLevel : 0.0f;
+        node.tailRemaining = 0;
+        node.wasActive = active;
+
+        if (target < 0.001f && node.returnGain < 0.001f) {
+            node.returnGain = 0.0f;
+            continue;
+        }
+
+        ApplyParams(node, true);
+        std::memcpy(punchScratch_.data(), buffer,
+                    sizeof(float) * static_cast<size_t>(frames) * 2);
+        node.effect->process(punchScratch_.data(), frames, 2);
+
+        const float step = (target - node.returnGain) / static_cast<float>(frames);
+        float gain = node.returnGain;
+        for (int frame = 0; frame < frames; ++frame) {
+            gain += step;
+            const float dryL = buffer[frame * 2];
+            const float dryR = buffer[frame * 2 + 1];
+            buffer[frame * 2] = dryL * (1.0f - gain) + punchScratch_[frame * 2] * gain;
+            buffer[frame * 2 + 1] =
+                dryR * (1.0f - gain) + punchScratch_[frame * 2 + 1] * gain;
         }
         node.returnGain = target;
     }

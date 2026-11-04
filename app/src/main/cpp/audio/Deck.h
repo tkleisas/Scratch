@@ -43,7 +43,8 @@ public:
     void ClearLoop();
     void SeekFraction(float fraction);
 
-    void Render(float* interleavedStereoOut, int32_t frames, float mixGain, int32_t outputSampleRate);
+    void Render(float* interleavedStereoOut, int32_t frames, float mixGain,
+                int32_t outputSampleRate, float mixGainEnd = -1.0f);
 
     int64_t PositionFrames() const;
     int64_t DurationFrames() const;
@@ -59,13 +60,13 @@ private:
 
     void AdoptPendingTrack();
     void RenderRaw(float* interleavedStereoOut, int32_t frames, float mixGain,
-                   int32_t outputSampleRate);
+                   float mixGainEnd, int32_t outputSampleRate);
     void RenderStretched(float* interleavedStereoOut, int32_t frames, float mixGain,
-                         int32_t outputSampleRate);
+                         float mixGainEnd, int32_t outputSampleRate);
     void PrepareStretchers(int outputSampleRate);
     void ResetStretch(int64_t sourceFrame);
     void PushStretchFrames(const float* left, const float* right, int frames);
-    bool UpdateFilters(int outputSampleRate);
+    bool UpdateFilters(int outputSampleRate, float smoothing = 0.25f);
     void UpdateEq(int outputSampleRate);
     float ApplyEqLeft(float sample);
     float ApplyEqRight(float sample);

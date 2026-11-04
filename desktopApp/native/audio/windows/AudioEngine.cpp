@@ -242,17 +242,18 @@ void AudioEngine::Render(float* output, int frames) {
     std::memset(output, 0, sizeof(float) * static_cast<size_t>(frames) * 2);
 
     const float targetCrossfader = crossfader_.load(std::memory_order_relaxed);
+    const float previousCrossfader = crossfaderSmoothed_;
     crossfaderSmoothed_ += (targetCrossfader - crossfaderSmoothed_) * 0.25f;
-    const StereoGains gains = EqualPowerGains(crossfaderSmoothed_);
+    const StereoGains gainsStart = EqualPowerGains(previousCrossfader);
+    const StereoGains gainsEnd = EqualPowerGains(crossfaderSmoothed_);
+    const int sampleRate = sampleRate_.load(std::memory_order_relaxed);
 
     for (int deck = 0; deck < 2; ++deck) {
         std::fill(deckScratch_[deck].begin(),
                   deckScratch_[deck].begin() + frames * 2, 0.0f);
     }
-    decks_[0].Render(deckScratch_[0].data(), frames, gains.a,
-                     sampleRate_.load(std::memory_order_relaxed));
-    decks_[1].Render(deckScratch_[1].data(), frames, gains.b,
-                     sampleRate_.load(std::memory_order_relaxed));
+    decks_[0].Render(deckScratch_[0].data(), frames, gainsStart.a, sampleRate, gainsEnd.a);
+    decks_[1].Render(deckScratch_[1].data(), frames, gainsStart.b, sampleRate, gainsEnd.b);
     fxRacks_[0].Process(deckScratch_[0].data(), frames);
     fxRacks_[1].Process(deckScratch_[1].data(), frames);
 
