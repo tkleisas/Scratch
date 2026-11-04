@@ -133,7 +133,7 @@ fun SettingsOverlay(controller: DjController, onDismiss: () -> Unit) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
-                            text = "Crossfade duration",
+                            text = "Auto-crossfade duration",
                             color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -157,8 +157,9 @@ fun SettingsOverlay(controller: DjController, onDismiss: () -> Unit) {
                         trackHeight = 26.dp,
                     )
                     Text(
-                        text = "Stored now. True overlapping crossfade needs a second playback " +
-                            "source per deck and is the next engine milestone.",
+                        text = "0 s advances at the end. Above 0 s, the next queued track " +
+                            "overlaps and fades in before the current track ends. Autoplay " +
+                            "must be on for that deck; NEXT/PREV cancels a transition.",
                         color = ScratchOutline,
                         fontSize = 9.sp,
                     )

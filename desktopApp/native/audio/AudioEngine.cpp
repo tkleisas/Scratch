@@ -49,8 +49,9 @@ bool AudioEngine::Start(std::string& error) {
         std::memory_order_relaxed);
     sampleRate_.store(48000, std::memory_order_relaxed);
 
-    decks_[0].PrepareForSampleRate(48000);
-    decks_[1].PrepareForSampleRate(48000);
+    for (auto& pair : deckPairs_) {
+        pair.PrepareForSampleRate(48000);
+    }
     spectrum_.Init(48000);
     for (auto& scratchBuffer : deckScratch_) {
         scratchBuffer.assign(16384 * 2, 0.0f);
@@ -100,8 +101,8 @@ void AudioEngine::RenderLoop() {
         for (int deck = 0; deck < 2; ++deck) {
             std::fill(deckScratch_[deck].begin(), deckScratch_[deck].begin() + frames * 2, 0.0f);
         }
-        decks_[0].Render(deckScratch_[0].data(), frames, gainsStart.a, 48000, gainsEnd.a);
-        decks_[1].Render(deckScratch_[1].data(), frames, gainsStart.b, 48000, gainsEnd.b);
+        deckPairs_[0].Render(deckScratch_[0].data(), frames, gainsStart.a, gainsEnd.a, 48000);
+        deckPairs_[1].Render(deckScratch_[1].data(), frames, gainsStart.b, gainsEnd.b, 48000);
         fxRacks_[0].Process(deckScratch_[0].data(), frames);
         fxRacks_[1].Process(deckScratch_[1].data(), frames);
 
@@ -142,7 +143,47 @@ void AudioEngine::RenderLoop() {
 }
 
 Deck& AudioEngine::GetDeck(int index) {
-    return decks_[index == 0 ? 0 : 1];
+    return deckPairs_[index == 0 ? 0 : 1].Active();
+}
+
+Deck& AudioEngine::GetIncomingDeck(int index) {
+    return deckPairs_[index == 0 ? 0 : 1].Incoming();
+}
+
+bool AudioEngine::StartCrossfade(int index, float seconds) {
+    return deckPairs_[index == 0 ? 0 : 1].StartCrossfade(seconds, SampleRate());
+}
+
+bool AudioEngine::IsCrossfading(int index) const {
+    return deckPairs_[index == 0 ? 0 : 1].IsCrossfading();
+}
+
+float AudioEngine::CrossfadeProgress(int index) const {
+    return deckPairs_[index == 0 ? 0 : 1].CrossfadeProgress();
+}
+
+int64_t AudioEngine::CrossfadeDurationMs(int index) const {
+    const int rate = SampleRate();
+    if (rate <= 0) return 0;
+    const int64_t frames = deckPairs_[index == 0 ? 0 : 1].CrossfadeTotalFrames();
+    return frames * 1000 / rate;
+}
+
+int64_t AudioEngine::CrossfadePositionMs(int index) const {
+    return static_cast<int64_t>(
+        std::llround(deckPairs_[index == 0 ? 0 : 1].Incoming().PositionSeconds() * 1000.0));
+}
+
+bool AudioEngine::ConsumeCrossfadeComplete(int index) {
+    return deckPairs_[index == 0 ? 0 : 1].ConsumeCrossfadeComplete();
+}
+
+void AudioEngine::CancelCrossfade(int index) {
+    deckPairs_[index == 0 ? 0 : 1].CancelCrossfade();
+}
+
+bool AudioEngine::ConsumeEnded(int index) {
+    return deckPairs_[index == 0 ? 0 : 1].ConsumeEnded();
 }
 
 FxRack& AudioEngine::GetFxRack(int index) {

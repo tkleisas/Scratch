@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Deck.h"
+#include "DeckPair.h"
 #include "EqualPower.h"
 #include "FxRack.h"
 #include "SpectrumAnalyzer.h"
@@ -19,7 +20,16 @@ public:
     void Stop();
 
     Deck& GetDeck(int index);
+    Deck& GetIncomingDeck(int index);
     FxRack& GetFxRack(int index);
+    bool StartCrossfade(int index, float seconds);
+    bool IsCrossfading(int index) const;
+    float CrossfadeProgress(int index) const;
+    int64_t CrossfadeDurationMs(int index) const;
+    int64_t CrossfadePositionMs(int index) const;
+    bool ConsumeCrossfadeComplete(int index);
+    void CancelCrossfade(int index);
+    bool ConsumeEnded(int index);
     void SetCrossfader(float value);
     void SetMasterGain(float value);
     int SampleRate() const;
@@ -37,7 +47,7 @@ private:
     PaStream* stream_ = nullptr;
     bool paInitialized_ = false;
 
-    Deck decks_[2];
+    DeckPair deckPairs_[2];
     FxRack fxRacks_[3];
     std::vector<float> deckScratch_[2];
     scratch::SpectrumAnalyzer spectrum_;

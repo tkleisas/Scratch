@@ -40,6 +40,21 @@ object DjEngine {
     fun loadPcm(deck: Int, pcm: ShortArray): Boolean = nativeLoadPcm(deck, pcm)
     fun loadPcmFile(deck: Int, path: String, sampleRate: Int): Boolean =
         nativeLoadPcmFile(deck, path, sampleRate)
+    fun loadCrossfadeTrack(deck: Int, fd: Int): Boolean =
+        nativeLoadCrossfadeTrack(deck, fd)
+    fun loadCrossfadePcmFile(deck: Int, path: String, sampleRate: Int): Boolean =
+        nativeLoadCrossfadePcmFile(deck, path, sampleRate)
+    fun startCrossfade(deck: Int, seconds: Float): Boolean =
+        nativeStartCrossfade(deck, seconds)
+    fun isCrossfading(deck: Int): Boolean = nativeIsCrossfading(deck)
+    fun crossfadeProgress(deck: Int): Float = nativeGetCrossfadeProgress(deck)
+    fun crossfadeDurationMs(deck: Int): Long = nativeGetCrossfadeDurationMs(deck)
+    fun crossfadePositionMs(deck: Int): Long = nativeGetCrossfadePositionMs(deck)
+    fun crossfadeWaveform(deck: Int, buckets: Int): FloatArray =
+        nativeGetCrossfadeWaveform(deck, buckets)
+    fun consumeCrossfadeComplete(deck: Int): Boolean =
+        nativeConsumeCrossfadeComplete(deck)
+    fun cancelCrossfade(deck: Int) = nativeCancelCrossfade(deck)
     fun lastError(): String = nativeGetLastError()
     fun positionMs(deck: Int): Long = nativeGetPositionMs(deck)
     fun durationMs(deck: Int): Long = nativeGetDurationMs(deck)
@@ -110,6 +125,20 @@ object DjEngine {
     private external fun nativeLoadTrack(deck: Int, fd: Int): Boolean
     private external fun nativeLoadPcm(deck: Int, pcm: ShortArray): Boolean
     private external fun nativeLoadPcmFile(deck: Int, path: String, sampleRate: Int): Boolean
+    private external fun nativeLoadCrossfadeTrack(deck: Int, fd: Int): Boolean
+    private external fun nativeLoadCrossfadePcmFile(
+        deck: Int,
+        path: String,
+        sampleRate: Int,
+    ): Boolean
+    private external fun nativeStartCrossfade(deck: Int, seconds: Float): Boolean
+    private external fun nativeIsCrossfading(deck: Int): Boolean
+    private external fun nativeGetCrossfadeProgress(deck: Int): Float
+    private external fun nativeGetCrossfadeDurationMs(deck: Int): Long
+    private external fun nativeGetCrossfadePositionMs(deck: Int): Long
+    private external fun nativeGetCrossfadeWaveform(deck: Int, buckets: Int): FloatArray
+    private external fun nativeConsumeCrossfadeComplete(deck: Int): Boolean
+    private external fun nativeCancelCrossfade(deck: Int)
     private external fun nativeGetLastError(): String
     private external fun nativeGetPositionMs(deck: Int): Long
     private external fun nativeGetDurationMs(deck: Int): Long

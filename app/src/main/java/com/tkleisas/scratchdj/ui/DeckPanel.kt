@@ -187,6 +187,7 @@ fun DeckPanel(
             }
 
             Spacer(Modifier.height(2.dp))
+            val crossfadeGhost = controller.crossfadeGhost(side)
             Waveform(
                 peaks = state.peaks,
                 positionMs = state.positionMs,
@@ -198,6 +199,11 @@ fun DeckPanel(
                 loopOut = state.loopOut,
                 loopEnabled = state.loopEnabled,
                 cuePoint = state.cuePoint,
+                ghostPeaks = crossfadeGhost?.peaks,
+                ghostPositionMs = crossfadeGhost?.positionMs ?: 0L,
+                ghostDurationMs = crossfadeGhost?.durationMs ?: 0L,
+                crossfadeProgress = crossfadeGhost?.progress,
+                crossfadeWindowMs = crossfadeGhost?.windowMs ?: 0L,
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 onSeek = { controller.seekFraction(side, it) },
                 onToggleMode = { controller.toggleWaveformMode() },

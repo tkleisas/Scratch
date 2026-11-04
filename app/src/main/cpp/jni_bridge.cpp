@@ -48,6 +48,45 @@ jstring ToJavaString(JNIEnv* env, const std::string& value) {
     return env->NewStringUTF(value.c_str());
 }
 
+jfloatArray GetWaveformForDeck(JNIEnv* env, jint deck, jint buckets, bool incoming) {
+    if (!ValidDeck(deck) || buckets <= 0) {
+        return env->NewFloatArray(0);
+    }
+    buckets = std::min(buckets, 8192);
+
+    std::shared_ptr<TrackData> track;
+    {
+        std::lock_guard<std::mutex> lock(gEngineMutex);
+        if (!gEngine) {
+            return env->NewFloatArray(0);
+        }
+        track = incoming
+            ? gEngine->GetIncomingDeck(deck).GetTrackForUi()
+            : gEngine->GetDeck(deck).GetTrackForUi();
+    }
+    if (!track || track->peaks.empty()) {
+        return env->NewFloatArray(0);
+    }
+
+    std::vector<float> values(static_cast<size_t>(buckets), 0.0f);
+    const int64_t peakCount = static_cast<int64_t>(track->peaks.size());
+    for (int i = 0; i < buckets; ++i) {
+        const int64_t begin = peakCount * i / buckets;
+        const int64_t end = std::max(begin + 1, peakCount * (i + 1) / buckets);
+        float peak = 0.0f;
+        for (int64_t p = begin; p < end && p < peakCount; ++p) {
+            peak = std::max(peak, track->peaks[static_cast<size_t>(p)]);
+        }
+        values[static_cast<size_t>(i)] = peak;
+    }
+
+    jfloatArray result = env->NewFloatArray(buckets);
+    if (result != nullptr) {
+        env->SetFloatArrayRegion(result, 0, buckets, values.data());
+    }
+    return result;
+}
+
 }
 
 extern "C" {
@@ -107,6 +146,67 @@ Java_com_tkleisas_scratchdj_audio_DjEngine_nativeLoadTrack(JNIEnv*, jobject, jin
         return JNI_FALSE;
     }
     gEngine->GetDeck(deck).SetTrack(std::move(track));
+    gLastError.clear();
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeLoadCrossfadeTrack(
+    JNIEnv*, jobject, jint deck, jint fd) {
+    if (!ValidDeck(deck)) {
+        return Fail(nullptr, "Invalid deck");
+    }
+
+    int sampleRate = 48000;
+    {
+        std::lock_guard<std::mutex> lock(gEngineMutex);
+        if (gEngine) {
+            sampleRate = gEngine->SampleRate();
+        }
+    }
+
+    std::string error;
+    auto track = scratch::LoadTrackFromFd(fd, error, sampleRate);
+    if (!track) {
+        return Fail(nullptr, error);
+    }
+
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (!gEngine) {
+        gLastError = "Audio engine is not running";
+        return JNI_FALSE;
+    }
+    gEngine->GetIncomingDeck(deck).SetTrack(std::move(track));
+    gLastError.clear();
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeLoadCrossfadePcmFile(
+    JNIEnv* env, jobject, jint deck, jstring path, jint sampleRate) {
+    if (!ValidDeck(deck) || path == nullptr) {
+        return Fail(nullptr, "Invalid cached PCM track");
+    }
+
+    const char* utf8 = env->GetStringUTFChars(path, nullptr);
+    if (utf8 == nullptr) {
+        return JNI_FALSE;
+    }
+    std::string filePath(utf8);
+    env->ReleaseStringUTFChars(path, utf8);
+
+    std::string error;
+    auto track = scratch::LoadMappedPcmFromFile(filePath, sampleRate, error);
+    if (!track) {
+        return Fail(nullptr, error);
+    }
+
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (!gEngine) {
+        gLastError = "Audio engine is not running";
+        return JNI_FALSE;
+    }
+    gEngine->GetIncomingDeck(deck).SetTrack(std::move(track));
     gLastError.clear();
     return JNI_TRUE;
 }
@@ -531,46 +631,107 @@ Java_com_tkleisas_scratchdj_audio_DjEngine_nativeConsumeEnded(JNIEnv*, jobject, 
     if (!gEngine) {
         return JNI_FALSE;
     }
-    return gEngine->GetDeck(deck).ConsumeEnded() ? JNI_TRUE : JNI_FALSE;
+    return gEngine->ConsumeEnded(deck) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeStartCrossfade(
+    JNIEnv*, jobject, jint deck, jfloat seconds) {
+    if (!ValidDeck(deck)) {
+        return JNI_FALSE;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (!gEngine) {
+        return JNI_FALSE;
+    }
+    return gEngine->StartCrossfade(deck, seconds) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeIsCrossfading(JNIEnv*, jobject, jint deck) {
+    if (!ValidDeck(deck)) {
+        return JNI_FALSE;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (!gEngine) {
+        return JNI_FALSE;
+    }
+    return gEngine->IsCrossfading(deck) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetCrossfadeProgress(
+    JNIEnv*, jobject, jint deck) {
+    if (!ValidDeck(deck)) {
+        return 0.0f;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (!gEngine) {
+        return 0.0f;
+    }
+    return gEngine->CrossfadeProgress(deck);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetCrossfadeDurationMs(
+    JNIEnv*, jobject, jint deck) {
+    if (!ValidDeck(deck)) {
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (!gEngine) {
+        return 0;
+    }
+    return static_cast<jlong>(gEngine->CrossfadeDurationMs(deck));
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetCrossfadePositionMs(
+    JNIEnv*, jobject, jint deck) {
+    if (!ValidDeck(deck)) {
+        return 0;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (!gEngine) {
+        return 0;
+    }
+    return static_cast<jlong>(gEngine->CrossfadePositionMs(deck));
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeConsumeCrossfadeComplete(
+    JNIEnv*, jobject, jint deck) {
+    if (!ValidDeck(deck)) {
+        return JNI_FALSE;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (!gEngine) {
+        return JNI_FALSE;
+    }
+    return gEngine->ConsumeCrossfadeComplete(deck) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeCancelCrossfade(JNIEnv*, jobject, jint deck) {
+    if (!ValidDeck(deck)) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gEngine) {
+        gEngine->CancelCrossfade(deck);
+    }
 }
 
 JNIEXPORT jfloatArray JNICALL
 Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetWaveform(JNIEnv* env, jobject, jint deck,
                                                             jint buckets) {
-    if (!ValidDeck(deck) || buckets <= 0) {
-        return env->NewFloatArray(0);
-    }
-    buckets = std::min(buckets, 8192);
+    return GetWaveformForDeck(env, deck, buckets, false);
+}
 
-    std::shared_ptr<TrackData> track;
-    {
-        std::lock_guard<std::mutex> lock(gEngineMutex);
-        if (!gEngine) {
-            return env->NewFloatArray(0);
-        }
-        track = gEngine->GetDeck(deck).GetTrackForUi();
-    }
-    if (!track || track->peaks.empty()) {
-        return env->NewFloatArray(0);
-    }
-
-    std::vector<float> values(static_cast<size_t>(buckets), 0.0f);
-    const int64_t peakCount = static_cast<int64_t>(track->peaks.size());
-    for (int i = 0; i < buckets; ++i) {
-        const int64_t begin = peakCount * i / buckets;
-        const int64_t end = std::max(begin + 1, peakCount * (i + 1) / buckets);
-        float peak = 0.0f;
-        for (int64_t p = begin; p < end && p < peakCount; ++p) {
-            peak = std::max(peak, track->peaks[static_cast<size_t>(p)]);
-        }
-        values[static_cast<size_t>(i)] = peak;
-    }
-
-    jfloatArray result = env->NewFloatArray(buckets);
-    if (result != nullptr) {
-        env->SetFloatArrayRegion(result, 0, buckets, values.data());
-    }
-    return result;
+JNIEXPORT jfloatArray JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetCrossfadeWaveform(
+    JNIEnv* env, jobject, jint deck, jint buckets) {
+    return GetWaveformForDeck(env, deck, buckets, true);
 }
 
 JNIEXPORT jint JNICALL

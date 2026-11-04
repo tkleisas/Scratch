@@ -43,6 +43,7 @@ public:
     void ClearLoop();
     void SetSlipMode(bool enabled);
     void SeekFraction(float fraction);
+    void CopyMixSettingsFrom(const Deck& other);
 
     void Render(float* interleavedStereoOut, int32_t frames, float mixGain,
                 int32_t outputSampleRate, float mixGainEnd = -1.0f);

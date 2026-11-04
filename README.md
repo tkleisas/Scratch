@@ -44,13 +44,14 @@ This is an early development build, exercised on a physical Android 15 device an
 - Tempo reset: tap the `0` next to SYNC to return pitch to 0% instantly.
 - Looping: one-tap LOOP creates and enables a 4-second loop at the playhead. IN sets the loop start without engaging the loop; OUT sets the end and starts looping. CLR clears. A pending IN point is drawn on the waveform. Key-locked playback wraps the stretcher source at the loop seam instead of resetting it, so loops stay continuous.
 - Cue points and four hot cues per deck: CUE sets or jumps and pauses; hot-cue pads set empty slots or jump and play; long-press clears. Cues reset on track load and are session-only. SLIP mode makes platter scratches return to where playback would have reached on release.
+- Auto-crossfade: with Autoplay on and a next track in the deck queue, the next track is prepared ahead and fades in on the same deck over the configured duration. During the overlap, a temporary waveform window spans the crossfade: the outgoing track fades to an outline while the incoming track goes from a dashed outline to solid. Loading, NEXT/PREV, seeking, scratching, looping, pausing, or disabling Autoplay cancels the pending transition.
 - Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, plate reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves. Echo tempo sync follows the effective BPM of its rack's deck (the master rack follows the active crossfader side).
 - Waveforms computed from 8192 peak buckets at load and normalized for display. Two global views: **FULL** shows the whole track; **SCROLL** follows the playhead in a zoomed window with a whole-track minimap. Tap or drag either waveform to seek, and tap the **FULL/SCROLL** pill to switch views. The scrolling window is configured in seconds or beats and follows each deck's effective BPM.
 - Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards.
 - Search overlay with one-tap add to Deck A or Deck B queues.
 - Per-deck queues are persistent playlists with a cursor: playing a track no longer removes it, and PREV/NEXT move backward/forward through the queue. The current track is highlighted in the queue overlay.
 - Queue lists can be saved as named presets (Deck A, Deck B, or A+B) in SQLite and reloaded later. Loading A-only or B-only preserves the other deck’s queue.
-- Settings screen with persisted Autoplay Deck A/B toggles, a persisted crossfade-duration value, and global waveform settings: FULL/SCROLL display, window unit (seconds or beats), and window size. Autoplay controls whether the deck advances to the next queued track at the end.
+- Settings screen with persisted Autoplay Deck A/B toggles, a persisted auto-crossfade duration, and global waveform settings: FULL/SCROLL display, window unit (seconds or beats), and window size. Autoplay controls whether the deck advances to the next queued track at the end; the crossfade duration controls how early that next track starts.
 
 ### Desktop (Linux / Windows)
 
@@ -82,7 +83,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 - BPM is analyzed the first time a track is loaded, or on demand when SYNC is pressed. It is not a full library pre-analysis pass yet. Tempo SYNC does not phase/downbeat-align decks yet; beatgrid sync is next.
 - Cue points and hot cues reset on track load and do not persist across restarts. SLIP currently applies to platter scratching only; hot-cue and loop slip behavior and per-track cue storage are not implemented.
 - Playback notifications currently expose Pause/stop only; a full media session with lock-screen controls and resume is not implemented.
-- True overlapping crossfade is not implemented yet; the crossfade duration is persisted, but it needs a second playback source per deck. Autoplay currently advances with the deck’s normal fade-in.
+- Auto-crossfade is queue-based and does not beat-align the incoming track. If the next track is not decoded in time, or the crossfade duration is 0, autoplay falls back to advancing at the track end without overlap. Manual NEXT/PREV and other transport actions cancel an in-progress transition instead of starting another crossfade.
 - Reported latency on the test phone varies between roughly 40–125 ms depending on the callback; Bluetooth output is not suitable for DJ use.
 - The scrolling waveform is BPM-scaled but not beat/downbeat-aligned yet; the window follows the effective BPM without a beatgrid.
 - The search keyboard floats over the results on some IMEs; the A/B queue buttons are deliberately kept on the left so they stay reachable.
@@ -147,6 +148,7 @@ app/src/main/cpp/
   jni_bridge.cpp           JNI entry points and engine lifetime
   audio/AudioEngine.*      Oboe stream, mixing, crossfader, mastering
   audio/Deck.*             Transport, scratch/jog, tempo/key lock, filters, loops
+  audio/DeckPair.h         Per-deck dual voice and equal-power auto-crossfade
   audio/TrackLoader.*      WAV/AIFF parsing, resampling, PCM16/mmapped track builder
   audio/BpmAnalyzer.*      Onset/flux BPM estimation over any track source
   audio/FxRack.*           Per-rack insert chains and independent punch sends
@@ -295,7 +297,7 @@ The Gradle task builds `desktopApp/native` with CMake and sets `java.library.pat
 
 This project is developed test-first where the code allows it.
 
-Native DSP and file parsing (57 GoogleTest cases):
+Native DSP and file parsing (62 GoogleTest cases):
 
 ```bash
 cmake -S app/src/test/cpp -B build/native-tests -DCMAKE_BUILD_TYPE=Debug
@@ -303,7 +305,7 @@ cmake --build build/native-tests -j
 ctest --test-dir build/native-tests --output-on-failure
 ```
 
-The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation, bypass and response curves, loop wrapping, crossfader law, BPM detection, spectrum band mapping, the per-rack FX bypass/filter/punch-tail behavior, serial punch limiter behavior, key-lock loop continuity, crossfader gain ramps, and the vendored YAWN time-stretcher/transient detector.
+The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation, bypass and response curves, loop wrapping, crossfader law, auto-crossfade promotion, cancellation, tail clamping, and end behavior, BPM detection, spectrum band mapping, the per-rack FX bypass/filter/punch-tail behavior, serial punch limiter behavior, key-lock loop continuity, crossfader gain ramps, and the vendored YAWN time-stretcher/transient detector.
 
 Shared Kotlin model tests (6 cases):
 
@@ -351,12 +353,11 @@ Both jobs pin JDK 17, Android SDK 36, and NDK `27.2.12479018`.
 
 1. Extract the Compose deck UI into a shared `:ui` Compose Multiplatform module so Android and desktop run the exact same screen code.
 2. Full-library background analysis, beatgrid/downbeat detection, and phase-aligned SYNC.
-3. Cue points, hot cues, and slip mode.
-4. FX presets and automation; embedded libav, JACK/PipeWire backend, and AppImage/Flatpak packaging.
-5. Disk-backed WAV/AIFF support and a cache-size/usage UI.
-6. Full media session and lock-screen/resume notification controls.
-7. Master limiter, vinyl wow/flutter, and better anti-aliasing at extreme scratch rates.
-8. Latency measurement and device-specific audio tuning.
+3. FX presets and automation; embedded libav, JACK/PipeWire backend, and AppImage/Flatpak packaging.
+4. Disk-backed WAV/AIFF support and a cache-size/usage UI.
+5. Full media session and lock-screen/resume notification controls.
+6. Master limiter, vinyl wow/flutter, and better anti-aliasing at extreme scratch rates.
+7. Latency measurement and device-specific audio tuning.
 
 ## Versioning
 

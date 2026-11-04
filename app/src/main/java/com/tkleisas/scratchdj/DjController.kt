@@ -36,6 +36,7 @@ import com.tkleisas.scratchdj.model.WaveformWindowMath
 import com.tkleisas.scratchdj.model.WaveformWindowUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -70,6 +71,14 @@ class DjController(private val context: Context) {
     private val decodeMutex = Mutex()
     private var prefetchA: Prefetch? = null
     private var prefetchB: Prefetch? = null
+    private var crossfadePrepA: CrossfadePrep? = null
+    private var crossfadePrepB: CrossfadePrep? = null
+    private var crossfadePreparedA: Long? = null
+    private var crossfadePreparedB: Long? = null
+    private var crossfadeNextA: Track? = null
+    private var crossfadeNextB: Track? = null
+    private val crossfadeGhostA = mutableStateOf<CrossfadeGhost?>(null)
+    private val crossfadeGhostB = mutableStateOf<CrossfadeGhost?>(null)
 
     val deckA = mutableStateOf(DeckUiState())
     val deckB = mutableStateOf(DeckUiState())
@@ -218,6 +227,7 @@ class DjController(private val context: Context) {
         recordHistory: Boolean = true,
     ) {
         rawQueue(side).select(track.id)
+        cancelCrossfade(side)
         cancelPrefetchIfDifferent(side, track.id)
         val holder = deck(side)
         val current = holder.value.track
@@ -389,6 +399,27 @@ class DjController(private val context: Context) {
     }
 
     private data class Prefetch(val trackId: Long, val job: Job)
+    private data class CrossfadePrep(
+        val trackId: Long,
+        val job: Job?,
+        val failed: Boolean = false,
+    )
+
+    data class CrossfadeGhost(
+        val track: Track,
+        val peaks: FloatArray,
+        val durationMs: Long,
+        val windowMs: Long,
+        val positionMs: Long,
+        val progress: Float,
+    )
+
+    fun crossfadeGhost(side: DeckSide): CrossfadeGhost? =
+        if (side == DeckSide.A) crossfadeGhostA.value else crossfadeGhostB.value
+
+    private fun setCrossfadeGhost(side: DeckSide, value: CrossfadeGhost?) {
+        if (side == DeckSide.A) crossfadeGhostA.value = value else crossfadeGhostB.value = value
+    }
 
     private fun prefetch(side: DeckSide): Prefetch? =
         if (side == DeckSide.A) prefetchA else prefetchB
@@ -456,10 +487,253 @@ class DjController(private val context: Context) {
     private fun currentGeneration(side: DeckSide): Int =
         if (side == DeckSide.A) loadGenerationA else loadGenerationB
 
+    private fun autoplayEnabled(side: DeckSide): Boolean =
+        if (side == DeckSide.A) autoplayA.value else autoplayB.value
+
+    private fun crossfadePrep(side: DeckSide): CrossfadePrep? =
+        if (side == DeckSide.A) crossfadePrepA else crossfadePrepB
+
+    private fun setCrossfadePrep(side: DeckSide, value: CrossfadePrep?) {
+        if (side == DeckSide.A) crossfadePrepA = value else crossfadePrepB = value
+    }
+
+    private fun crossfadePrepared(side: DeckSide): Long? =
+        if (side == DeckSide.A) crossfadePreparedA else crossfadePreparedB
+
+    private fun setCrossfadePrepared(side: DeckSide, trackId: Long?) {
+        if (side == DeckSide.A) crossfadePreparedA = trackId else crossfadePreparedB = trackId
+    }
+
+    private fun crossfadeNext(side: DeckSide): Track? =
+        if (side == DeckSide.A) crossfadeNextA else crossfadeNextB
+
+    private fun setCrossfadeNext(side: DeckSide, track: Track?) {
+        if (side == DeckSide.A) crossfadeNextA = track else crossfadeNextB = track
+    }
+
+    private fun clearCrossfadePreparation(side: DeckSide) {
+        crossfadePrep(side)?.job?.cancel()
+        setCrossfadePrep(side, null)
+        setCrossfadePrepared(side, null)
+    }
+
+    private fun cancelCrossfade(side: DeckSide) {
+        clearCrossfadePreparation(side)
+        setCrossfadeNext(side, null)
+        setCrossfadeGhost(side, null)
+        DjEngine.cancelCrossfade(side.index)
+    }
+
+    private fun manageCrossfade(side: DeckSide) {
+        if (DjEngine.isCrossfading(side.index)) return
+        val state = deck(side).value
+        val seconds = crossfadeSeconds.floatValue
+        val eligible = seconds > 0f &&
+            autoplayEnabled(side) &&
+            state.track != null &&
+            state.isPlaying &&
+            state.durationMs > 0L &&
+            !state.isLoading &&
+            !state.loopEnabled
+        if (!eligible) {
+            clearCrossfadePreparation(side)
+            return
+        }
+
+        val next = rawQueue(side).peekNext()
+        if (next == null) {
+            clearCrossfadePreparation(side)
+            return
+        }
+
+        val existingPrep = crossfadePrep(side)
+        if (existingPrep != null && existingPrep.trackId != next.id) {
+            clearCrossfadePreparation(side)
+        }
+
+        val remaining = state.durationMs - state.positionMs
+        if (remaining <= 0L) return
+        val crossfadeMs = (seconds * 1000f).toLong()
+        val prepared = crossfadePrepared(side)
+        if (prepared == next.id) {
+            if (remaining <= crossfadeMs + CROSSFADE_START_SLOP_MS) {
+                if (DjEngine.startCrossfade(side.index, seconds)) {
+                    setCrossfadeNext(side, next)
+                    val windowMs = DjEngine.crossfadeDurationMs(side.index)
+                    setCrossfadeGhost(
+                        side,
+                        CrossfadeGhost(
+                            track = next,
+                            peaks = DjEngine.crossfadeWaveform(side.index, WAVEFORM_BUCKETS),
+                            durationMs = next.durationMs,
+                            windowMs = windowMs,
+                            positionMs = 0L,
+                            progress = 0f,
+                        ),
+                    )
+                }
+            }
+            return
+        }
+
+        if (remaining > crossfadeMs + CROSSFADE_PREP_LEAD_MS) return
+        val currentPrep = crossfadePrep(side)
+        if (currentPrep?.trackId == next.id &&
+            (currentPrep.job?.isActive == true || currentPrep.failed)
+        ) {
+            return
+        }
+        if (currentPrep != null) {
+            currentPrep.job?.cancel()
+            setCrossfadePrep(side, null)
+        }
+
+        val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            val loaded = try {
+                if (AudioFormats.isNativePlayable(next.displayName)) {
+                    context.contentResolver
+                        .openFileDescriptor(Uri.parse(next.uri), "r")
+                        ?.use { descriptor ->
+                            DjEngine.loadCrossfadeTrack(side.index, descriptor.fd)
+                        }
+                        ?: false
+                } else {
+                    val uri = Uri.parse(next.uri)
+                    val source = PcmDiskDecoder.probe(context, uri)
+                    val cacheFile = PcmCache.fileFor(context, next, source.sampleRate)
+                    if (!PcmCache.isValid(cacheFile)) {
+                        decodeMutex.withLock {
+                            if (!PcmCache.isValid(cacheFile)) {
+                                PcmCache.ensureSpace(
+                                    context,
+                                    PcmCache.estimatedBytes(next, source.sampleRate),
+                                )
+                                PcmDiskDecoder.decodeToFile(
+                                    context = context,
+                                    uri = uri,
+                                    targetSampleRate = source.sampleRate,
+                                    outputFile = cacheFile,
+                                    isCancelled = { !isActive },
+                                    onProgress = {},
+                                )
+                            }
+                        }
+                    }
+                    DjEngine.loadCrossfadePcmFile(
+                        side.index,
+                        cacheFile.absolutePath,
+                        source.sampleRate,
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                false
+            }
+            withContext(Dispatchers.Main) {
+                val activePrep = crossfadePrep(side)
+                if (activePrep?.trackId != next.id) return@withContext
+                if (loaded) {
+                    if (rawQueue(side).peekNext()?.id == next.id &&
+                        crossfadeSeconds.floatValue > 0f &&
+                        autoplayEnabled(side) &&
+                        !DjEngine.isCrossfading(side.index)
+                    ) {
+                        setCrossfadePrepared(side, next.id)
+                    }
+                } else {
+                    setCrossfadePrep(side, CrossfadePrep(next.id, null, failed = true))
+                }
+            }
+        }
+        setCrossfadePrep(side, CrossfadePrep(next.id, job))
+        job.start()
+    }
+
+    private fun updateCrossfadeGhost(side: DeckSide) {
+        val ghost = crossfadeGhost(side) ?: return
+        if (!DjEngine.isCrossfading(side.index)) return
+        val progress = DjEngine.crossfadeProgress(side.index)
+        val position = DjEngine.crossfadePositionMs(side.index)
+        setCrossfadeGhost(
+            side,
+            ghost.copy(progress = progress, positionMs = position),
+        )
+    }
+
+    private fun finishCrossfade(side: DeckSide) {
+        val next = crossfadeNext(side) ?: return
+        setCrossfadeNext(side, null)
+        setCrossfadeGhost(side, null)
+        clearCrossfadePreparation(side)
+
+        val queue = rawQueue(side)
+        if (queue.peekNext()?.id == next.id) queue.next() else queue.select(next.id)
+        publishQueue(side)
+
+        val holder = deck(side)
+        val previous = holder.value.track
+        if (previous != null && previous.id != next.id) {
+            val history = history(side)
+            history.addLast(previous)
+            while (history.size > 20) history.removeFirst()
+        }
+
+        val peaks = DjEngine.waveform(side.index, WAVEFORM_BUCKETS)
+        val duration = DjEngine.durationMs(side.index)
+        val position = DjEngine.positionMs(side.index)
+        val playing = DjEngine.isPlaying(side.index)
+        holder.value = holder.value.copy(
+            track = next,
+            peaks = peaks,
+            isPlaying = playing,
+            positionMs = position,
+            durationMs = duration,
+            isLoading = false,
+            loadingTitle = null,
+            loadProgress = 0f,
+            bpm = next.bpm,
+            loopIn = null,
+            loopOut = null,
+            loopEnabled = false,
+            cuePoint = null,
+            hotCues = List(4) { null },
+        )
+        reapplyDeckSettings(side, holder.value)
+        if (next.bpm <= 0f) {
+            analyzeBpm(side, next, currentGeneration(side))
+        }
+        updateFxTempo()
+        schedulePrefetch(side)
+    }
+
+    private fun reapplyDeckSettings(side: DeckSide, state: DeckUiState) {
+        DjEngine.setDeckGain(side.index, state.volume)
+        DjEngine.setFilterMode(side.index, state.filterMode)
+        DjEngine.setFilterCutoff(side.index, state.filterCutoff)
+        DjEngine.setTempo(side.index, state.tempo)
+        DjEngine.setKeyLock(side.index, state.keyLock)
+        DjEngine.setEqBypassed(side.index, state.eqBypassed)
+        state.eqNodes.forEachIndexed { index, node ->
+            DjEngine.setEqNode(side.index, index, node.frequency, node.gainDb, node.q)
+        }
+        DjEngine.setSlipMode(side.index, state.slipMode)
+    }
+
     private suspend fun pollEngine() {
         while (scope.isActive) {
+            if (DjEngine.consumeCrossfadeComplete(DeckSide.A.index)) {
+                finishCrossfade(DeckSide.A)
+            }
+            if (DjEngine.consumeCrossfadeComplete(DeckSide.B.index)) {
+                finishCrossfade(DeckSide.B)
+            }
             updateDeckState(DeckSide.A)
             updateDeckState(DeckSide.B)
+            manageCrossfade(DeckSide.A)
+            manageCrossfade(DeckSide.B)
+            updateCrossfadeGhost(DeckSide.A)
+            updateCrossfadeGhost(DeckSide.B)
             val anyPlaying = anyDeckPlaying()
             if (anyPlaying != lastPlaybackState) {
                 lastPlaybackState = anyPlaying
@@ -516,6 +790,7 @@ class DjController(private val context: Context) {
 
     fun togglePlay(side: DeckSide) {
         if (deck(side).value.track == null) return
+        cancelCrossfade(side)
         DjEngine.togglePlaying(side.index)
         val holder = deck(side)
         holder.value = holder.value.copy(isPlaying = DjEngine.isPlaying(side.index))
@@ -523,6 +798,7 @@ class DjController(private val context: Context) {
 
     fun seekFraction(side: DeckSide, fraction: Float) {
         if (deck(side).value.track == null) return
+        cancelCrossfade(side)
         DjEngine.seekFraction(side.index, fraction)
     }
 
@@ -718,6 +994,7 @@ class DjController(private val context: Context) {
         val holder = deck(side)
         val state = holder.value
         if (state.track == null) return
+        cancelCrossfade(side)
         val loopIn = state.loopIn
         val loopOut = state.loopOut
         val hasPoints = loopIn != null && loopOut != null && loopOut > loopIn
@@ -735,6 +1012,7 @@ class DjController(private val context: Context) {
         val holder = deck(side)
         val state = holder.value
         if (state.track == null || state.durationMs <= 0) return
+        cancelCrossfade(side)
         val start = (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 0.999f)
         val end = state.loopOut?.takeIf { it > start }
         DjEngine.setLoopEnabled(side.index, false)
@@ -749,6 +1027,7 @@ class DjController(private val context: Context) {
     fun setLoopOut(side: DeckSide) {
         val state = deck(side).value
         if (state.track == null || state.durationMs <= 0) return
+        cancelCrossfade(side)
         val end = (state.positionMs.toFloat() / state.durationMs).coerceIn(0.001f, 1f)
         val existingStart = state.loopIn
         val start = if (existingStart != null && existingStart < end) {
@@ -760,6 +1039,7 @@ class DjController(private val context: Context) {
     }
 
     fun clearLoop(side: DeckSide) {
+        cancelCrossfade(side)
         DjEngine.clearLoop(side.index)
         val holder = deck(side)
         holder.value = holder.value.copy(loopIn = null, loopOut = null, loopEnabled = false)
@@ -884,12 +1164,17 @@ class DjController(private val context: Context) {
             autoplayB.value = enabled
             settingsStore.autoplayB = enabled
         }
+        if (!enabled) cancelCrossfade(side)
     }
 
     fun setCrossfadeSeconds(value: Float) {
         val clamped = value.coerceIn(0f, 12f)
         crossfadeSeconds.floatValue = clamped
         settingsStore.crossfadeSeconds = clamped
+        if (clamped <= 0f) {
+            cancelCrossfade(DeckSide.A)
+            cancelCrossfade(DeckSide.B)
+        }
     }
 
     fun setCrossfader(value: Float) {
@@ -949,6 +1234,7 @@ class DjController(private val context: Context) {
 
     fun scratchBegin(side: DeckSide) {
         if (deck(side).value.track != null) {
+            cancelCrossfade(side)
             DjEngine.scratchBegin(side.index)
         }
     }
@@ -979,6 +1265,7 @@ class DjController(private val context: Context) {
 
     fun setPlaying(side: DeckSide, playing: Boolean) {
         if (deck(side).value.track == null) return
+        cancelCrossfade(side)
         DjEngine.setPlaying(side.index, playing)
         val holder = deck(side)
         holder.value = holder.value.copy(isPlaying = DjEngine.isPlaying(side.index))
@@ -995,6 +1282,7 @@ class DjController(private val context: Context) {
         val holder = deck(side)
         val state = holder.value
         val cue = state.cuePoint ?: return
+        cancelCrossfade(side)
         DjEngine.seekFraction(side.index, cue)
         DjEngine.setPlaying(side.index, false)
         holder.value = state.copy(
@@ -1021,6 +1309,7 @@ class DjController(private val context: Context) {
             message.value = "Hot cue ${index + 1} set on Deck ${side.letter}"
             return
         }
+        cancelCrossfade(side)
         DjEngine.seekFraction(side.index, stored)
         DjEngine.setPlaying(side.index, true)
         holder.value = state.copy(
@@ -1061,6 +1350,8 @@ class DjController(private val context: Context) {
     private companion object {
         const val WAVEFORM_BUCKETS = 8192
         const val LOOP_SECONDS = 4
+        const val CROSSFADE_PREP_LEAD_MS = 5_000L
+        const val CROSSFADE_START_SLOP_MS = 0L
     }
 
     fun fxRack(rack: FxRack): FxRackState =

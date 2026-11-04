@@ -21,6 +21,7 @@ set(MAIN_CPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../main/cpp")
 add_executable(scratch_tests
     test_track_loader.cpp
     test_deck.cpp
+    test_deck_pair.cpp
     test_yawn_dsp.cpp
     test_bpm.cpp
     test_spectrum.cpp

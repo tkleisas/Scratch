@@ -273,6 +273,30 @@ void Deck::SetSlipMode(bool enabled) {
     }
 }
 
+void Deck::CopyMixSettingsFrom(const Deck& other) {
+    gain_.store(other.gain_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    filterMode_.store(other.filterMode_.load(std::memory_order_relaxed),
+                      std::memory_order_relaxed);
+    filterCutoff_.store(other.filterCutoff_.load(std::memory_order_relaxed),
+                        std::memory_order_relaxed);
+    tempo_.store(other.tempo_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    keyLock_.store(other.keyLock_.load(std::memory_order_relaxed),
+                   std::memory_order_relaxed);
+    slipMode_.store(other.slipMode_.load(std::memory_order_relaxed),
+                    std::memory_order_relaxed);
+    eqBypassed_.store(other.eqBypassed_.load(std::memory_order_relaxed),
+                      std::memory_order_relaxed);
+    for (int i = 0; i < kEqNodeCount; ++i) {
+        eqFrequency_[i].store(other.eqFrequency_[i].load(std::memory_order_relaxed),
+                              std::memory_order_relaxed);
+        eqGain_[i].store(other.eqGain_[i].load(std::memory_order_relaxed),
+                         std::memory_order_relaxed);
+        eqQ_[i].store(other.eqQ_[i].load(std::memory_order_relaxed),
+                      std::memory_order_relaxed);
+    }
+    resetFilter_.store(true, std::memory_order_relaxed);
+}
+
 void Deck::SetTempo(float ratio) {
     tempo_.store(std::clamp(ratio, 0.5f, 2.0f), std::memory_order_relaxed);
 }
