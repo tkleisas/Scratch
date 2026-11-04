@@ -87,7 +87,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 - Linux audio targets ALSA only; Windows uses WASAPI/ASIO. JACK/PipeWire routing is not implemented.
 - The desktop UI is adapted from the Android UI rather than rendered from a shared Compose module yet.
 - The release workflow publishes a debug-signed APK until Android release signing secrets are configured; the locally signed AAB is built with the key in `~/.volna/keystore.properties`.
-- Punch effects use a hybrid topology: Echo, Reverb, Filter, Crush, and Tape are parallel sends (tails survive pad release), while Compressor and Limiter use a serial insert path so punching them changes the main signal's dynamics. Punch sends tap the signal after the INSERT chain, so insert effects color the punch sound. PUNCH ordering controls the pad layout; only the INSERT chain order affects serial DSP.
+- Punch effects use a hybrid topology: Echo, Reverb, Filter, Crush, and Tape are parallel sends (tails survive pad release), while Compressor and Limiter use a serial insert path so punching them changes the main signal's dynamics. Punch sends tap the signal after the INSERT chain, so insert effects color the punch sound. PUNCH ordering controls pad layout and the serial order of punched dynamics; the INSERT chain order controls the always-on serial chain.
 - Echo tempo sync currently uses the effect's internal 120 BPM default; per-deck BPM is not pushed into the FX racks yet.
 - FX parameters are applied per audio block; automation, modulation, and named FX presets are not implemented yet.
 
