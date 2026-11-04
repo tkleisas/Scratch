@@ -340,6 +340,8 @@ class DjController(private val context: Context) {
                         loopIn = null,
                         loopOut = null,
                         loopEnabled = false,
+                        cuePoint = null,
+                        hotCues = List(4) { null },
                     )
                     if (autoPlay) {
                         DjEngine.setPlaying(side.index, true)
@@ -911,6 +913,80 @@ class DjController(private val context: Context) {
         DjEngine.setPlaying(DeckSide.B.index, false)
         deckA.value = deckA.value.copy(isPlaying = false)
         deckB.value = deckB.value.copy(isPlaying = false)
+    }
+
+    private fun playheadFraction(side: DeckSide): Float {
+        val state = deck(side).value
+        if (state.durationMs <= 0L) return 0f
+        return (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
+    }
+
+    fun setPlaying(side: DeckSide, playing: Boolean) {
+        if (deck(side).value.track == null) return
+        DjEngine.setPlaying(side.index, playing)
+        val holder = deck(side)
+        holder.value = holder.value.copy(isPlaying = DjEngine.isPlaying(side.index))
+    }
+
+    fun setCuePoint(side: DeckSide) {
+        val holder = deck(side)
+        if (holder.value.track == null || holder.value.durationMs <= 0) return
+        holder.value = holder.value.copy(cuePoint = playheadFraction(side))
+        message.value = "Cue set on Deck ${side.letter}"
+    }
+
+    fun jumpToCuePoint(side: DeckSide) {
+        val holder = deck(side)
+        val state = holder.value
+        val cue = state.cuePoint ?: return
+        DjEngine.seekFraction(side.index, cue)
+        DjEngine.setPlaying(side.index, false)
+        holder.value = state.copy(
+            positionMs = (cue * state.durationMs).toLong(),
+            isPlaying = false,
+        )
+    }
+
+    fun clearCuePoint(side: DeckSide) {
+        val holder = deck(side)
+        holder.value = holder.value.copy(cuePoint = null)
+    }
+
+    fun hitHotCue(side: DeckSide, index: Int) {
+        val holder = deck(side)
+        val state = holder.value
+        if (state.track == null || state.durationMs <= 0) return
+        if (index !in state.hotCues.indices) return
+        val stored = state.hotCues[index]
+        if (stored == null) {
+            val cues = state.hotCues.toMutableList()
+            cues[index] = playheadFraction(side)
+            holder.value = state.copy(hotCues = cues)
+            message.value = "Hot cue ${index + 1} set on Deck ${side.letter}"
+            return
+        }
+        DjEngine.seekFraction(side.index, stored)
+        DjEngine.setPlaying(side.index, true)
+        holder.value = state.copy(
+            positionMs = (stored * state.durationMs).toLong(),
+            isPlaying = true,
+        )
+    }
+
+    fun toggleSlipMode(side: DeckSide) {
+        val holder = deck(side)
+        val enabled = !holder.value.slipMode
+        holder.value = holder.value.copy(slipMode = enabled)
+        DjEngine.setSlipMode(side.index, enabled)
+    }
+
+    fun clearHotCue(side: DeckSide, index: Int) {
+        val holder = deck(side)
+        val state = holder.value
+        if (index !in state.hotCues.indices) return
+        val cues = state.hotCues.toMutableList()
+        cues[index] = null
+        holder.value = state.copy(hotCues = cues)
     }
 
     fun shutdown() {

@@ -442,6 +442,14 @@ Java_com_tkleisas_scratchdj_audio_DjEngine_nativeSetLoopPoints(JNIEnv*, jobject,
 }
 
 JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeSetSlipMode(
+    JNIEnv*, jobject, jint deck, jboolean enabled) {
+    if (!ValidDeck(deck)) return;
+    std::lock_guard<std::mutex> lock(gEngineMutex);
+    if (gEngine) gEngine->GetDeck(deck).SetSlipMode(enabled == JNI_TRUE);
+}
+
+JNIEXPORT void JNICALL
 Java_com_tkleisas_scratchdj_audio_DjEngine_nativeClearLoop(JNIEnv*, jobject, jint deck) {
     if (!ValidDeck(deck)) {
         return;

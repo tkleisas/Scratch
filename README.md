@@ -16,7 +16,7 @@ Android page: <https://tkleisas.github.io/scratch/> · Privacy: <https://tkleisa
 
 ## Status
 
-This is an early development build, exercised on a physical Android 15 device and Ubuntu 24.04. The core two-deck engine, scratching, MP3/FLAC/OGG decoding, tempo/key lock, filters, loops, library search, and queues are working on both platforms.
+This is an early development build, exercised on a physical Android 15 device and Ubuntu 24.04. The core two-deck engine, scratching, cue/hot cues, MP3/FLAC/OGG decoding, tempo/key lock, filters, loops, library search, and queues are working on both platforms.
 
 ### Working today
 
@@ -43,6 +43,7 @@ This is an early development build, exercised on a physical Android 15 device an
 - Tempo SYNC matches the other deck’s effective BPM (including its tempo shift) and enables key lock automatically. Missing BPMs are analyzed on demand when SYNC is pressed, with progress and result feedback.
 - Tempo reset: tap the `0` next to SYNC to return pitch to 0% instantly.
 - Looping: one-tap LOOP creates and enables a 4-second loop at the playhead. IN sets the loop start without engaging the loop; OUT sets the end and starts looping. CLR clears. A pending IN point is drawn on the waveform. Key-locked playback wraps the stretcher source at the loop seam instead of resetting it, so loops stay continuous.
+- Cue points and four hot cues per deck: CUE sets or jumps and pauses; hot-cue pads set empty slots or jump and play; long-press clears. Cues reset on track load and are session-only. SLIP mode makes platter scratches return to where playback would have reached on release.
 - Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, plate reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves. Echo tempo sync follows the effective BPM of its rack's deck (the master rack follows the active crossfader side).
 - Waveforms computed from 2048 peak buckets at load and normalized for display.
 - Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards.
@@ -80,7 +81,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 - WAV/AIFF tracks are still parsed and held in memory; only compressed formats use the disk-backed cache yet.
 - The first load of a very long compressed track takes time (about two minutes for an hour-long MP3 on the test phone) while it decodes into the cache. Subsequent loads are fast. The PCM cache is capped at 3 GB and pruned at startup.
 - BPM is analyzed the first time a track is loaded, or on demand when SYNC is pressed. It is not a full library pre-analysis pass yet. Tempo SYNC does not phase/downbeat-align decks yet; beatgrid sync is next.
-- Cue points, hot cues, and slip mode are not implemented.
+- Cue points and hot cues reset on track load and do not persist across restarts. SLIP currently applies to platter scratching only; hot-cue and loop slip behavior and per-track cue storage are not implemented.
 - Playback notifications currently expose Pause/stop only; a full media session with lock-screen controls and resume is not implemented.
 - True overlapping crossfade is not implemented yet; the crossfade duration is persisted, but it needs a second playback source per deck. Autoplay currently advances with the deck’s normal fade-in.
 - Reported latency on the test phone varies between roughly 40–125 ms depending on the callback; Bluetooth output is not suitable for DJ use.
@@ -292,7 +293,7 @@ The Gradle task builds `desktopApp/native` with CMake and sets `java.library.pat
 
 This project is developed test-first where the code allows it.
 
-Native DSP and file parsing (55 GoogleTest cases):
+Native DSP and file parsing (57 GoogleTest cases):
 
 ```bash
 cmake -S app/src/test/cpp -B build/native-tests -DCMAKE_BUILD_TYPE=Debug

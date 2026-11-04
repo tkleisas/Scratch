@@ -201,6 +201,42 @@ TEST(Deck, ScratchBypassesKeyLockStretcher) {
     EXPECT_LT(deck.PositionFrames(), before);
 }
 
+TEST(Deck, SlipScratchReturnsToTimeline) {
+    Deck deck;
+    deck.SetTrack(MakeTrack(10000, 1000));
+    deck.SetPlaying(true);
+    Render(deck, 100, 1000);
+    const int64_t timeline = deck.PositionFrames();
+
+    deck.SetSlipMode(true);
+    deck.BeginScratch();
+    deck.SetScratchRate(-1.0f);
+    Render(deck, 100, 1000);
+    EXPECT_LT(deck.PositionFrames(), timeline);
+
+    deck.EndScratch();
+    Render(deck, 1, 1000);
+
+    EXPECT_GT(deck.PositionFrames(), timeline);
+    EXPECT_LT(deck.PositionFrames(), timeline + 120);
+}
+
+TEST(Deck, SlipScratchWithoutSlipModeStaysScratched) {
+    Deck deck;
+    deck.SetTrack(MakeTrack(10000, 1000));
+    deck.SetPlaying(true);
+    Render(deck, 100, 1000);
+    const int64_t before = deck.PositionFrames();
+
+    deck.BeginScratch();
+    deck.SetScratchRate(-1.0f);
+    Render(deck, 100, 1000);
+    deck.EndScratch();
+    Render(deck, 1, 1000);
+
+    EXPECT_LT(deck.PositionFrames(), before);
+}
+
 TEST(Deck, JogWhenPausedMovesPositionWithoutSound) {
     Deck deck;
     deck.SetTrack(MakeTrack(10000, 1000));

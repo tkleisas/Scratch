@@ -140,6 +140,8 @@ void Deck::SetTrack(std::shared_ptr<TrackData> track) {
     ended_.store(false, std::memory_order_relaxed);
     resetStretch_.store(true, std::memory_order_relaxed);
     loopEnabled_.store(false, std::memory_order_relaxed);
+    slipActive_.store(false, std::memory_order_relaxed);
+    slipReleasePending_.store(false, std::memory_order_relaxed);
     loopStartFrames_.store(0, std::memory_order_relaxed);
     loopEndFrames_.store(0, std::memory_order_relaxed);
     positionFrames_.store(0, std::memory_order_relaxed);
@@ -175,6 +177,12 @@ void Deck::TogglePlaying() {
 }
 
 void Deck::BeginScratch() {
+    if (slipMode_.load(std::memory_order_relaxed) && IsPlaying()) {
+        slipPositionFrames_.store(positionFrames_.load(std::memory_order_relaxed),
+                                  std::memory_order_relaxed);
+        slipActive_.store(true, std::memory_order_relaxed);
+        slipReleasePending_.store(false, std::memory_order_relaxed);
+    }
     scratchActive_.store(true, std::memory_order_relaxed);
 }
 
@@ -185,6 +193,9 @@ void Deck::SetScratchRate(float rate) {
 void Deck::EndScratch() {
     scratchActive_.store(false, std::memory_order_relaxed);
     scratchRateTarget_.store(0.0f, std::memory_order_relaxed);
+    if (slipActive_.load(std::memory_order_relaxed)) {
+        slipReleasePending_.store(true, std::memory_order_relaxed);
+    }
 }
 
 void Deck::SetGain(float gain) {
@@ -254,6 +265,14 @@ void Deck::ClearLoop() {
     loopEndFrames_.store(0, std::memory_order_relaxed);
 }
 
+void Deck::SetSlipMode(bool enabled) {
+    slipMode_.store(enabled, std::memory_order_relaxed);
+    if (!enabled) {
+        slipActive_.store(false, std::memory_order_relaxed);
+        slipReleasePending_.store(false, std::memory_order_relaxed);
+    }
+}
+
 void Deck::SetTempo(float ratio) {
     tempo_.store(std::clamp(ratio, 0.5f, 2.0f), std::memory_order_relaxed);
 }
@@ -271,6 +290,8 @@ void Deck::SeekFraction(float fraction) {
     resetFilter_.store(true, std::memory_order_relaxed);
     resetStretch_.store(true, std::memory_order_relaxed);
     ended_.store(false, std::memory_order_relaxed);
+    slipActive_.store(false, std::memory_order_relaxed);
+    slipReleasePending_.store(false, std::memory_order_relaxed);
 }
 
 void Deck::AdoptPendingTrack() {
@@ -403,6 +424,15 @@ void Deck::Render(float* interleavedStereoOut, int32_t frames, float mixGain,
         rate_ = 1.0f;
         stretchActive_ = false;
         ResetStretch(positionFrames_.load(std::memory_order_relaxed));
+    }
+    if (slipReleasePending_.exchange(false, std::memory_order_relaxed)) {
+        const int64_t slipPosition = slipPositionFrames_.load(std::memory_order_relaxed);
+        positionFrames_.store(slipPosition, std::memory_order_relaxed);
+        slipActive_.store(false, std::memory_order_relaxed);
+        stretchActive_ = false;
+        ResetStretch(slipPosition);
+        svfLeft_.Reset();
+        svfRight_.Reset();
     }
 
     const bool scratch = scratchActive_.load(std::memory_order_relaxed);
@@ -538,6 +568,9 @@ void Deck::RenderRaw(float* interleavedStereoOut, int32_t frames, float mixGain,
     const float mixStep = (mixGainEnd - mixGain) / static_cast<float>(frames);
     float mix = mixGain;
     bool highPass = false;
+    const bool slipActive = slipActive_.load(std::memory_order_relaxed);
+    double slipPosition = static_cast<double>(
+        slipPositionFrames_.load(std::memory_order_relaxed));
 
     for (int32_t i = 0; i < frames; ++i) {
         if ((i & 15) == 0) {
@@ -597,6 +630,18 @@ void Deck::RenderRaw(float* interleavedStereoOut, int32_t frames, float mixGain,
         interleavedStereoOut[static_cast<size_t>(i) * 2 + 1] += right * gain;
         mix += mixStep;
 
+        if (slipActive && scratch) {
+            slipPosition += static_cast<double>(tempo_.load(std::memory_order_relaxed)) *
+                            stepScale;
+            if (loopActive && loopEnd > loopStart) {
+                if (slipPosition >= static_cast<double>(loopEnd)) {
+                    slipPosition = static_cast<double>(loopStart);
+                }
+            } else if (slipPosition > static_cast<double>(trackFrames - 1)) {
+                slipPosition = static_cast<double>(trackFrames - 1);
+            }
+        }
+
         position += static_cast<double>(rate_) * stepScale;
         if (position < 0.0) {
             position = 0.0;
@@ -610,6 +655,10 @@ void Deck::RenderRaw(float* interleavedStereoOut, int32_t frames, float mixGain,
         }
     }
 
+    if (slipActive) {
+        slipPositionFrames_.store(static_cast<int64_t>(std::llround(slipPosition)),
+                                  std::memory_order_relaxed);
+    }
     positionFrames_.store(static_cast<int64_t>(std::llround(position)),
                           std::memory_order_relaxed);
 }

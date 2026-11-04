@@ -67,6 +67,7 @@ object DjEngine {
     fun setLoopPoints(deck: Int, inFraction: Float, outFraction: Float) =
         nativeSetLoopPoints(deck, inFraction, outFraction)
     fun clearLoop(deck: Int) = nativeClearLoop(deck)
+    fun setSlipMode(deck: Int, enabled: Boolean) = nativeSetSlipMode(deck, enabled)
     fun waveform(deck: Int, buckets: Int): FloatArray = nativeGetWaveform(deck, buckets)
     fun analyzeBpm(deck: Int, expectedDurationMs: Long): Float =
         nativeAnalyzeBpm(deck, expectedDurationMs)
@@ -140,6 +141,7 @@ object DjEngine {
     private external fun nativeSetLoopEnabled(deck: Int, enabled: Boolean)
     private external fun nativeSetLoopPoints(deck: Int, inFraction: Float, outFraction: Float)
     private external fun nativeClearLoop(deck: Int)
+    private external fun nativeSetSlipMode(deck: Int, enabled: Boolean)
     private external fun nativeGetWaveform(deck: Int, buckets: Int): FloatArray
     private external fun nativeAnalyzeBpm(deck: Int, expectedDurationMs: Long): Float
     private external fun nativeGetSpectrum(): FloatArray

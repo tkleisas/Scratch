@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -194,9 +195,13 @@ fun DeckPanel(
                 loopIn = state.loopIn,
                 loopOut = state.loopOut,
                 loopEnabled = state.loopEnabled,
+                cuePoint = state.cuePoint,
                 modifier = Modifier.fillMaxWidth().height(28.dp),
                 onSeek = { controller.seekFraction(side, it) },
             )
+
+            Spacer(Modifier.height(2.dp))
+            CueRow(controller, side, state, accent)
 
             Spacer(Modifier.height(3.dp))
             Row(
@@ -297,6 +302,99 @@ fun DeckPanel(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CueRow(
+    controller: DjController,
+    side: DeckSide,
+    state: DeckUiState,
+    accent: Color,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().height(18.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        CueChip(
+            label = "CUE",
+            active = state.cuePoint != null,
+            enabled = state.track != null,
+            accent = accent,
+            modifier = Modifier.weight(1f),
+            onTap = {
+                if (state.cuePoint == null) {
+                    controller.setCuePoint(side)
+                } else {
+                    controller.jumpToCuePoint(side)
+                }
+            },
+            onLongPress = { controller.clearCuePoint(side) },
+        )
+        repeat(4) { index ->
+            CueChip(
+                label = "${index + 1}",
+                active = state.hotCues.getOrNull(index) != null,
+                enabled = state.track != null,
+                accent = accent,
+                modifier = Modifier.weight(1f),
+                onTap = { controller.hitHotCue(side, index) },
+                onLongPress = { controller.clearHotCue(side, index) },
+            )
+        }
+        CueChip(
+            label = "SLIP",
+            active = state.slipMode,
+            enabled = true,
+            accent = accent,
+            modifier = Modifier.weight(1f),
+            onTap = { controller.toggleSlipMode(side) },
+            onLongPress = {},
+        )
+    }
+}
+
+@Composable
+private fun CueChip(
+    label: String,
+    active: Boolean,
+    enabled: Boolean,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    onTap: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .height(18.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(
+                when {
+                    active -> accent.copy(alpha = 0.9f)
+                    enabled -> ScratchSurfaceRaised
+                    else -> ScratchSurfaceRaised.copy(alpha = 0.45f)
+                },
+            )
+            .pointerInput(enabled, active, label) {
+                if (enabled) {
+                    detectTapGestures(
+                        onTap = { onTap() },
+                        onLongPress = { onLongPress() },
+                    )
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = when {
+                active -> Color(0xFF0A0C0F)
+                enabled -> ScratchOutline
+                else -> ScratchOutline.copy(alpha = 0.35f)
+            },
+            fontSize = 6.5.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 

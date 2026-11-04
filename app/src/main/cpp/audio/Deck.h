@@ -41,6 +41,7 @@ public:
     void SetLoopEnabled(bool enabled);
     void SetLoopPoints(float inFraction, float outFraction);
     void ClearLoop();
+    void SetSlipMode(bool enabled);
     void SeekFraction(float fraction);
 
     void Render(float* interleavedStereoOut, int32_t frames, float mixGain,
@@ -97,6 +98,10 @@ private:
     std::atomic<bool> loopEnabled_{false};
     std::atomic<int64_t> loopStartFrames_{0};
     std::atomic<int64_t> loopEndFrames_{0};
+    std::atomic<bool> slipMode_{false};
+    std::atomic<bool> slipActive_{false};
+    std::atomic<bool> slipReleasePending_{false};
+    std::atomic<int64_t> slipPositionFrames_{0};
     std::atomic<bool> resetFilter_{false};
     std::atomic<bool> startPlayback_{false};
     std::atomic<bool> ended_{false};

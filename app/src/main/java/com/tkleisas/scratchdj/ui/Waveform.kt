@@ -30,6 +30,7 @@ fun Waveform(
     loopIn: Float? = null,
     loopOut: Float? = null,
     loopEnabled: Boolean = false,
+    cuePoint: Float? = null,
     modifier: Modifier = Modifier,
     onSeek: (Float) -> Unit,
 ) {
@@ -120,6 +121,21 @@ fun Waveform(
                     start = Offset(inX, 0f),
                     end = Offset(inX, size.height),
                     strokeWidth = 1.5.dp.toPx(),
+                )
+            }
+
+            if (cuePoint != null) {
+                val cueX = cuePoint.coerceIn(0f, 1f) * size.width
+                drawLine(
+                    color = Color.White.copy(alpha = 0.7f),
+                    start = Offset(cueX, 0f),
+                    end = Offset(cueX, size.height),
+                    strokeWidth = 1.5.dp.toPx(),
+                )
+                drawCircle(
+                    color = accent,
+                    radius = 2.dp.toPx(),
+                    center = Offset(cueX, 2.dp.toPx()),
                 )
             }
 
