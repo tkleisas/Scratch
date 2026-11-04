@@ -34,13 +34,14 @@ This is an early development build, exercised on a physical Android 15 device an
 - Per-deck filter with explicit LP / OFF / HP buttons and a logarithmic 20 Hz–20 kHz cutoff slider. Center OFF is a true bypass.
 - Per-deck 8-node graphical EQ: draggable low shelf, six peaks, and high shelf, each up to ±18 dB, with per-node Q. The editor draws the live magnitude curve plus pre-EQ and post-EQ spectra. FLAT resets gains, BYPASS removes the EQ from the chain while preserving settings, and named presets are saved to SQLite and can be loaded on either deck. EQ runs before the DJ filter.
 - Master 32-band logarithmic spectrum analyzer in the mixer strip, fed from the final mixed output.
+- Soft-knee master ceiling avoids hard digital clipping on hot mixes.
 - Equal-power crossfader.
 - Per-deck channel volume in the mixer strip, from 0% to 150%, with independent A/B sliders.
 - Per-deck transport: PREV, PLAY/PAUSE, NEXT. NEXT pulls from the deck queue and is disabled when there is no next track; the next compressed queue track is prefetched into the PCM cache in the background. PREV uses per-deck play history.
 - BPM analysis on first load using a native onset/flux detector, persisted in SQLite. BPM is shown in the deck header and search results.
 - Tempo SYNC matches the other deck’s effective BPM (including its tempo shift) and enables key lock automatically. Missing BPMs are analyzed on demand when SYNC is pressed, with progress and result feedback.
 - Tempo reset: tap the `0` next to SYNC to return pitch to 0% instantly.
-- Looping: one-tap LOOP creates and enables a 4-second loop at the playhead. IN sets the loop start without engaging the loop; OUT sets the end and starts looping. CLR clears. A pending IN point is drawn on the waveform.
+- Looping: one-tap LOOP creates and enables a 4-second loop at the playhead. IN sets the loop start without engaging the loop; OUT sets the end and starts looping. CLR clears. A pending IN point is drawn on the waveform. Key-locked playback wraps the stretcher source at the loop seam instead of resetting it, so loops stay continuous.
 - Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, plate reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves.
 - Waveforms computed from 2048 peak buckets at load and normalized for display.
 - Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards.
@@ -86,7 +87,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 - Desktop audio currently targets ALSA only; JACK/PipeWire routing is not implemented.
 - The desktop UI is adapted from the Android UI rather than rendered from a shared Compose module yet.
 - The release workflow publishes a debug-signed APK until Android release signing secrets are configured; the locally signed AAB is built with the key in `~/.volna/keystore.properties`.
-- Punch effects run as parallel sends rather than serial inserts. That keeps their tails independent, but punched Filter/Compressor/Limiter behave as parallel processing rather than full inserts. PUNCH ordering controls the pad layout; only the INSERT chain order affects serial DSP.
+- Punch effects run as parallel sends rather than serial inserts. That keeps their tails independent, but punched Filter/Compressor/Limiter behave as parallel processing rather than full inserts. Punch sends tap the signal after the INSERT chain, so insert effects color the punch sound. PUNCH ordering controls the pad layout; only the INSERT chain order affects serial DSP.
 - Echo tempo sync currently uses the effect's internal 120 BPM default; per-deck BPM is not pushed into the FX racks yet.
 - FX parameters are applied per audio block; automation, modulation, and named FX presets are not implemented yet.
 
@@ -290,7 +291,7 @@ The Gradle task builds `desktopApp/native` with CMake and sets `java.library.pat
 
 This project is developed test-first where the code allows it.
 
-Native DSP and file parsing (53 GoogleTest cases):
+Native DSP and file parsing (54 GoogleTest cases):
 
 ```bash
 cmake -S app/src/test/cpp -B build/native-tests -DCMAKE_BUILD_TYPE=Debug
@@ -298,7 +299,7 @@ cmake --build build/native-tests -j
 ctest --test-dir build/native-tests --output-on-failure
 ```
 
-The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation, bypass and response curves, loop wrapping, crossfader law, BPM detection, spectrum band mapping, the per-rack FX bypass/filter/punch-tail behavior, and the vendored YAWN time-stretcher/transient detector.
+The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation, bypass and response curves, loop wrapping, crossfader law, BPM detection, spectrum band mapping, the per-rack FX bypass/filter/punch-tail behavior, key-lock loop continuity, and the vendored YAWN time-stretcher/transient detector.
 
 JVM unit tests (34 JUnit cases):
 

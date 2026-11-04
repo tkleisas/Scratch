@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "SoftClip.h"
 
 #include <algorithm>
 #include <cmath>
@@ -117,7 +118,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(oboe::AudioStream* stream, vo
     const float master = masterSmoothed_;
 
     for (int32_t i = 0; i < frames * 2; ++i) {
-        output[i] = std::clamp(output[i] * master, -1.0f, 1.0f);
+        output[i] = scratch::SoftClip(output[i] * master);
     }
 
     spectrum_.Process(output, frames);

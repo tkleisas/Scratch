@@ -286,6 +286,13 @@ void FxRack::ProcessPunch(const float* dry, float* buffer, int frames) {
             continue;
         }
 
+        const float sendLevel = node.send.load(std::memory_order_relaxed);
+        if (sendLevel < 0.001f && node.returnGain < 0.001f) {
+            node.returnGain = 0.0f;
+            node.tailRemaining = 0;
+            continue;
+        }
+
         ApplyParams(node, true);
 
         if (active) {
@@ -297,7 +304,7 @@ void FxRack::ProcessPunch(const float* dry, float* buffer, int frames) {
 
         node.effect->process(punchScratch_.data(), frames, 2);
 
-        const float target = node.send.load(std::memory_order_relaxed);
+        const float target = sendLevel;
         const float step = (target - node.returnGain) / static_cast<float>(frames);
         float gain = node.returnGain;
         for (int frame = 0; frame < frames; ++frame) {

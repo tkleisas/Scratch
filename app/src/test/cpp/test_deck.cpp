@@ -338,6 +338,42 @@ TEST(Deck, EqResponseShowsBoostedNode) {
     EXPECT_GT(response[loudest], 6.0f);
 }
 
+
+TEST(Deck, KeyLockLoopKeepsOutputAliveAcrossWraps) {
+    constexpr int kSampleRate = 48000;
+    Deck deck;
+    deck.SetTrack(MakeSineTrack(kSampleRate * 2, kSampleRate, 220.0));
+    deck.PrepareForSampleRate(kSampleRate);
+    deck.SeekFraction(0.25f);
+    deck.SetLoopPoints(0.2f, 0.3f);
+    deck.SetLoopEnabled(true);
+    deck.SetKeyLock(true);
+    deck.SetPlaying(true);
+
+    // Let the stretcher prime before checking steady-state output.
+    RenderEnergy(deck, 20, 512, kSampleRate);
+
+    bool wrapped = false;
+    int64_t previousPosition = deck.PositionFrames();
+    for (int block = 0; block < 120; ++block) {
+        const auto out = Render(deck, 512, kSampleRate);
+        double energy = 0.0;
+        for (float sample : out) {
+            energy += std::fabs(sample);
+        }
+        EXPECT_GT(energy, 1.0) << "block " << block << " became silent at the loop seam";
+
+        const int64_t position = deck.PositionFrames();
+        EXPECT_GE(position, 0);
+        EXPECT_LT(position, 96000);
+        if (position < previousPosition) {
+            wrapped = true;
+        }
+        previousPosition = position;
+    }
+    EXPECT_TRUE(wrapped);
+}
+
 TEST(Deck, LoopWrapsPlaybackAtLoopEnd) {
     Deck deck;
     deck.SetTrack(MakeTrack(10000, 1000));

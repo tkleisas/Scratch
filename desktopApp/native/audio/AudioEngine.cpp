@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "SoftClip.h"
 
 #include <algorithm>
 #include <cmath>
@@ -112,7 +113,7 @@ void AudioEngine::RenderLoop() {
         masterSmoothed_ += (targetMaster - masterSmoothed_) * 0.25f;
 
         for (int i = 0; i < frames * 2; ++i) {
-            const float sample = std::clamp(mix[i] * masterSmoothed_, -1.0f, 1.0f);
+            const float sample = scratch::SoftClip(mix[i] * masterSmoothed_);
             output[static_cast<size_t>(i)] =
                 static_cast<int16_t>(sample * 32767.0f);
         }

@@ -339,6 +339,7 @@ void Deck::ResetStretch(int64_t sourceFrame) {
     stretchFifoRead_ = 0;
     stretchFifoWrite_ = 0;
     stretchFifoCount_ = 0;
+    stretchLoopActive_ = false;
     stretchSourcePos_ = static_cast<double>(std::clamp<int64_t>(
         sourceFrame, 0, std::max<int64_t>(durationFrames_.load() - 1, 0)));
     if (stretchLeft_) {
@@ -514,6 +515,12 @@ void Deck::RenderRaw(float* interleavedStereoOut, int32_t frames, float mixGain,
         return;
     }
 
+    const bool initiallyPlaying = playing_.load(std::memory_order_relaxed);
+    const bool initiallyScratching = scratchActive_.load(std::memory_order_relaxed);
+    if (!initiallyPlaying && !initiallyScratching && envelope_ < 1e-4f) {
+        return;
+    }
+
     const int trackRate = current_->sampleRate > 0 ? current_->sampleRate : outputSampleRate;
     const double stepScale = static_cast<double>(trackRate) / outputSampleRate;
 
@@ -615,22 +622,63 @@ void Deck::RenderStretched(float* interleavedStereoOut, int32_t frames, float mi
         current_->sampleRate > 0 ? current_->sampleRate : outputSampleRate;
     const double sourceStep = static_cast<double>(trackRate) / outputSampleRate;
 
-    while (stretchFifoCount_ < frames &&
-           stretchSourcePos_ < static_cast<double>(trackFrames - 1)) {
-        const double remainingSource =
-            static_cast<double>(trackFrames - 1) - stretchSourcePos_;
-        if (remainingSource <= 0.0) {
-            break;
+    const bool loopActive = loopEnabled_.load(std::memory_order_relaxed);
+    const int64_t loopStart = loopStartFrames_.load(std::memory_order_relaxed);
+    const int64_t loopEnd = loopEndFrames_.load(std::memory_order_relaxed);
+    const bool loopValid = loopActive && loopEnd > loopStart;
+    const double loopSpan = loopValid ? static_cast<double>(loopEnd - loopStart) : 0.0;
+
+    auto wrapSource = [&](double position) {
+        if (!loopValid) return position;
+        if (position < static_cast<double>(loopStart) ||
+            position >= static_cast<double>(loopEnd)) {
+            double wrapped = std::fmod(position - loopStart, loopSpan);
+            if (wrapped < 0.0) {
+                wrapped += loopSpan;
+            }
+            position = static_cast<double>(loopStart) + wrapped;
         }
-        const int want = std::min(
-            kStretchInputFrames,
-            std::max(1, static_cast<int>(remainingSource / sourceStep) + 1));
+        return position;
+    };
+
+    // Entering a new loop can start with the stretcher outside the loop.
+    // Reset once at loop start; steady-state wraps must not reset the
+    // stretcher, otherwise every pass across the loop end produces a gap.
+    if (loopValid && !stretchLoopActive_ &&
+        (stretchSourcePos_ < static_cast<double>(loopStart) ||
+         stretchSourcePos_ >= static_cast<double>(loopEnd))) {
+        ResetStretch(loopStart);
+    }
+    stretchLoopActive_ = loopValid;
+    if (loopValid) {
+        stretchSourcePos_ = wrapSource(stretchSourcePos_);
+    }
+
+    int fillAttempts = 0;
+    while (stretchFifoCount_ < frames && fillAttempts++ < 32) {
+        int want = 0;
+        if (loopValid) {
+            // Read across the loop seam into the wrapped start. The input
+            // buffer is continuous looped audio, so no stretcher reset is
+            // needed at the wrap.
+            want = kStretchInputFrames;
+        } else {
+            const double remainingSource =
+                static_cast<double>(trackFrames - 1) - stretchSourcePos_;
+            if (remainingSource <= 0.0) {
+                break;
+            }
+            want = std::min(
+                kStretchInputFrames,
+                std::max(1, static_cast<int>(remainingSource / sourceStep) + 1));
+        }
         if (want <= 0) {
             break;
         }
 
         for (int i = 0; i < want; ++i) {
-            const double sourcePosition = stretchSourcePos_ + i * sourceStep;
+            const double sourcePosition = wrapSource(
+                stretchSourcePos_ + i * sourceStep);
             stretchInputLeft_[i] = CubicSample(*current_, trackFrames, sourcePosition, 0);
             stretchInputRight_[i] = CubicSample(*current_, trackFrames, sourcePosition, 1);
         }
@@ -652,6 +700,9 @@ void Deck::RenderStretched(float* interleavedStereoOut, int32_t frames, float mi
             PushStretchFrames(stretchOutputLeft_.data(), stretchOutputRight_.data(), written);
         }
         stretchSourcePos_ += consumed * sourceStep;
+        if (loopValid) {
+            stretchSourcePos_ = wrapSource(stretchSourcePos_);
+        }
         if (written <= 0 && consumed <= 0) {
             break;
         }
@@ -694,12 +745,8 @@ void Deck::RenderStretched(float* interleavedStereoOut, int32_t frames, float mi
 
     double position = static_cast<double>(positionFrames_.load(std::memory_order_relaxed)) +
                       available * tempo * sourceStep;
-    const bool loopActive = loopEnabled_.load(std::memory_order_relaxed);
-    const int64_t loopStart = loopStartFrames_.load(std::memory_order_relaxed);
-    const int64_t loopEnd = loopEndFrames_.load(std::memory_order_relaxed);
-    if (loopActive && loopEnd > loopStart && position >= static_cast<double>(loopEnd)) {
-        position = static_cast<double>(loopStart);
-        ResetStretch(loopStart);
+    if (loopValid) {
+        position = wrapSource(position);
     } else if (!loopActive && stretchFifoCount_ == 0 &&
                stretchSourcePos_ >= static_cast<double>(trackFrames - 1)) {
         playing_.store(false, std::memory_order_relaxed);

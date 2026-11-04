@@ -127,4 +127,5 @@ private:
     int stretchFifoWrite_ = 0;
     int stretchFifoCount_ = 0;
     bool stretchActive_ = false;
+    bool stretchLoopActive_ = false;
 };

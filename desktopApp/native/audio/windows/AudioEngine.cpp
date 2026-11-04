@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "SoftClip.h"
 
 #include <pa_win_wasapi.h>
 
@@ -263,7 +264,7 @@ void AudioEngine::Render(float* output, int frames) {
     const float targetMaster = masterGain_.load(std::memory_order_relaxed);
     masterSmoothed_ += (targetMaster - masterSmoothed_) * 0.25f;
     for (int i = 0; i < frames * 2; ++i) {
-        output[i] = std::clamp(output[i] * masterSmoothed_, -1.0f, 1.0f);
+        output[i] = scratch::SoftClip(output[i] * masterSmoothed_);
     }
     spectrum_.Process(output, frames);
 }
