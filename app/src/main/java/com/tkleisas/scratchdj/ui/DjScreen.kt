@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tkleisas.scratchdj.DjController
@@ -274,6 +275,7 @@ private fun QueueBarButton(
 ) {
     val accent = if (side == DeckSide.A) DeckAccentA else DeckAccentB
     val count = controller.queue(side).value.size
+    val next = controller.nextTrack(side)
     TextButton(
         onClick = onClick,
         modifier = modifier.fillMaxHeight(),
@@ -298,7 +300,16 @@ private fun QueueBarButton(
             fontSize = 9.sp,
             fontFamily = FontFamily.Monospace,
         )
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = next?.let { "NEXT · ${it.title}" } ?: "NO NEXT TRACK",
+            color = if (next != null) accent.copy(alpha = 0.8f) else ScratchOutline,
+            fontSize = 8.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(6.dp))
         Text("OPEN", color = ScratchOutline, fontSize = 8.sp)
     }
 }

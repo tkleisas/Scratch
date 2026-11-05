@@ -73,16 +73,18 @@ class TrackDatabase(
         }
     }
 
-    fun search(term: String, limit: Int = DEFAULT_LIMIT): List<Track> {
+    fun search(term: String, limit: Int = DEFAULT_LIMIT, offset: Int = 0): List<Track> {
         val db = readableDatabase
+        val safeLimit = limit.coerceAtLeast(1)
+        val safeOffset = offset.coerceAtLeast(0)
         val cursor = if (SearchQuery.isBlank(term)) {
             db.rawQuery(
                 """
                 SELECT $COLUMNS FROM $TABLE
                 ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """.trimIndent(),
-                arrayOf(limit.toString()),
+                arrayOf(safeLimit.toString(), safeOffset.toString()),
             )
         } else {
             val pattern = SearchQuery.likePattern(term)
@@ -93,9 +95,9 @@ class TrackDatabase(
                    OR artist LIKE ? ESCAPE '\'
                    OR album LIKE ? ESCAPE '\'
                 ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """.trimIndent(),
-                arrayOf(pattern, pattern, pattern, limit.toString()),
+                arrayOf(pattern, pattern, pattern, safeLimit.toString(), safeOffset.toString()),
             )
         }
 
@@ -120,8 +122,23 @@ class TrackDatabase(
         }
     }
 
-    fun count(): Int {
-        return readableDatabase.rawQuery("SELECT COUNT(*) FROM $TABLE", null).use {
+    fun count(term: String = ""): Int {
+        val db = readableDatabase
+        if (SearchQuery.isBlank(term)) {
+            return db.rawQuery("SELECT COUNT(*) FROM $TABLE", null).use {
+                if (it.moveToFirst()) it.getInt(0) else 0
+            }
+        }
+        val pattern = SearchQuery.likePattern(term)
+        return db.rawQuery(
+            """
+            SELECT COUNT(*) FROM $TABLE
+            WHERE title LIKE ? ESCAPE '\'
+               OR artist LIKE ? ESCAPE '\'
+               OR album LIKE ? ESCAPE '\'
+            """.trimIndent(),
+            arrayOf(pattern, pattern, pattern),
+        ).use {
             if (it.moveToFirst()) it.getInt(0) else 0
         }
     }
@@ -140,7 +157,7 @@ class TrackDatabase(
     private companion object {
         const val VERSION = 2
         const val TABLE = "tracks"
-        const val DEFAULT_LIMIT = 500
+        const val DEFAULT_LIMIT = Int.MAX_VALUE
         const val COLUMNS =
             "id, title, artist, album, display_name, extension, duration_ms, uri, bpm"
     }

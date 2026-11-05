@@ -66,6 +66,25 @@ class DeckQueue(initial: List<Track> = emptyList()) {
         index = -1
     }
 
+    fun restore(tracks: List<Track>, currentIndex: Int) {
+        items.clear()
+        items.addAll(tracks)
+        index = currentIndex.coerceIn(-1, items.lastIndex)
+    }
+
+    fun move(from: Int, to: Int): Boolean {
+        if (from !in items.indices || to !in items.indices || from == to) return false
+        val item = items.removeAt(from)
+        items.add(to, item)
+        index = when {
+            index == from -> to
+            from < index && to >= index -> index - 1
+            from > index && to <= index -> index + 1
+            else -> index
+        }
+        return true
+    }
+
     fun clear() {
         items.clear()
         index = -1

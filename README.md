@@ -48,7 +48,10 @@ This is an early development build, exercised on a physical Android 15 device an
 - Auto-crossfade: with Autoplay on and a next track in the deck queue, the next track is prepared ahead and fades in on the same deck over the configured duration. During the overlap, a temporary waveform window spans the crossfade: the outgoing track fades to an outline while the incoming track goes from a dashed outline to solid. Loading, NEXT/PREV, seeking, scratching, looping, pausing, or disabling Autoplay cancels the pending transition.
 - Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, plate reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves. Echo tempo sync follows the effective BPM of its rack's deck (the master rack follows the active crossfader side).
 - Waveforms computed from 8192 peak buckets at load and normalized for display. Two global views: **FULL** shows the whole track; **SCROLL** follows the playhead in a zoomed window with a whole-track minimap. Tap or drag either waveform to seek, and tap the **FULL/SCROLL** pill to switch views. The scrolling window is configured in seconds or beats and follows each deck's effective BPM.
-- Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards.
+- Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards. Search results load in pages of 100 with the next page prefetched near the bottom; the header shows the full result count.
+- Per-deck queue rows can be reordered with a drag handle or up/down buttons while the current-track cursor follows the track.
+- The next queued track is shown in each deck’s queue bar.
+- The active queues, current cursor, last loaded tracks, and paused positions are restored after an app restart. Restored tracks load paused.
 - Search overlay with one-tap add to Deck A or Deck B queues.
 - Per-deck queues are persistent playlists with a cursor: playing a track no longer removes it, and PREV/NEXT move backward/forward through the queue. The current track is highlighted in the queue overlay.
 - Queue lists can be saved as named presets (Deck A, Deck B, or A+B) in SQLite and reloaded later. Loading A-only or B-only preserves the other deck’s queue.
@@ -123,7 +126,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 | HOLD / LATCH | Pad behavior in the FX overlay. HOLD is momentary; LATCH taps to toggle. |
 | CROSSFADER | Equal-power mix between Deck A and B. |
 | SEARCH + QUEUE | Search the SQLite index and add results to either deck queue. |
-| Queue bar | Open a deck queue; play or remove tracks, navigate with PREV/NEXT, and save/load A, B, or A+B queue presets. |
+| Queue bar | Shows the next queued track; tap OPEN to play or remove tracks, reorder with the drag handle/up-down buttons, navigate with PREV/NEXT, and save/load A, B, or A+B queue presets. |
 
 ## Architecture
 
@@ -225,7 +228,7 @@ sdk.dir=/path/to/Android/Sdk
 Build and install the Android app:
 
 ```bash
-export JAVA_HOME=/path/to/jdk17
+export JAVA_HOME="$PWD/.jdk"
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
@@ -239,7 +242,7 @@ key is read from `keystore.properties` in the project root, or from
 Neither file is committed.
 
 ```bash
-export JAVA_HOME=/path/to/full-jdk17
+export JAVA_HOME="$PWD/.jdk"
 ./gradlew :app:assembleRelease :app:bundleRelease
 ```
 
@@ -262,9 +265,19 @@ The desktop build additionally needs a full JDK (not just a JRE), CMake, ALSA he
 
 ```bash
 sudo apt install cmake libasound2-dev ffmpeg
-export JAVA_HOME=/path/to/full-jdk17
+# The full JDK can live in .jdk/ (ignored by git) or anywhere outside the repo.
+export JAVA_HOME="$PWD/.jdk"
 export JAVA_INCLUDE_PATH="$JAVA_HOME/include"
 ./gradlew :desktopApp:run
+```
+
+Build a standalone Linux application folder:
+
+```bash
+./gradlew :desktopApp:createDistributable
+# desktopApp/build/compose/binaries/main/app/Scratch/bin/Scratch
+# Convenience symlink used during development:
+# desktopApp/build/Scratch/bin/Scratch
 ```
 
 `JAVA_INCLUDE_PATH` must point at a directory containing `jni.h`; Android Studio's JBR may not include it. If it is not under `$JAVA_HOME/include`, pass `-PjniInclude=/path/to/jdk/include`. Set `JAVA_HOME` to a full JDK 17 installation for `jpackage`.
@@ -317,29 +330,29 @@ Shared Kotlin model tests (6 cases):
 
 Covers waveform window sizing in seconds/beats, BPM fallback, playhead follow behavior, and short-track clamping.
 
-JVM unit tests (34 JUnit cases):
+JVM unit tests (37 JUnit cases):
 
 ```bash
 ./gradlew testDebugUnitTest
 ```
 
-Covers scratch angular-velocity math, format detection, persistent queue navigation and peeking, SQL LIKE escaping, time formatting, tempo-sync ratios, EQ preset serialization, and FX preset serialization.
+Covers scratch angular-velocity math, format detection, queue navigation/peeking/reordering/restore, SQL LIKE escaping, time formatting, tempo-sync ratios, EQ preset serialization, and FX preset serialization.
 
-Device tests (18 cases, real device or emulator):
+Device tests (20 cases, real device or emulator):
 
 ```bash
 ./gradlew connectedDebugAndroidTest
 ```
 
-Covers SQLite track search/BPM/EQ/queue preset persistence, SharedPreferences settings/theme persistence, the MediaCodec MP3 decode, in-memory and disk-cache decoding, mmap-backed JNI loading, waveform generation, and native BPM analysis. Note that `connectedDebugAndroidTest` may uninstall the app when it finishes; reinstall the debug APK afterwards.
+Covers SQLite track search/BPM/EQ/queue preset persistence, session and SharedPreferences/theme persistence, the MediaCodec MP3 decode, in-memory and disk-cache decoding, mmap-backed JNI loading, waveform generation, and native BPM analysis. Note that `connectedDebugAndroidTest` may uninstall the app when it finishes; reinstall the debug APK afterwards.
 
-Desktop JVM tests (3 cases):
+Desktop JVM tests (5 cases):
 
 ```bash
 ./gradlew :desktopApp:test
 ```
 
-Covers desktop EQ/queue preset file persistence and corrupt-file recovery.
+Covers desktop EQ/queue preset and session file persistence, plus corrupt-file recovery.
 
 ## Continuous integration
 

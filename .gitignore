@@ -25,3 +25,6 @@ keystore.properties
 *.jks
 *.keystore
 *.p12
+
+# Local full JDK used for desktop builds
+.jdk/

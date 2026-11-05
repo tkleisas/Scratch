@@ -94,6 +94,41 @@ class DeckQueueTest {
     }
 
     @Test
+    fun `move reorders and keeps current track selected`() {
+        val queue = DeckQueue(listOf(track(1), track(2), track(3), track(4)))
+        queue.select(3)
+
+        assertTrue(queue.move(3, 0))
+
+        assertEquals(listOf(4L, 1L, 2L, 3L), queue.snapshot().map { it.id })
+        assertEquals(3, queue.currentIndex)
+        assertEquals(3L, queue.current?.id)
+    }
+
+    @Test
+    fun `move before current adjusts cursor`() {
+        val queue = DeckQueue(listOf(track(1), track(2), track(3), track(4)))
+        queue.select(3)
+
+        assertTrue(queue.move(0, 3))
+
+        assertEquals(listOf(2L, 3L, 4L, 1L), queue.snapshot().map { it.id })
+        assertEquals(1, queue.currentIndex)
+        assertEquals(3L, queue.current?.id)
+    }
+
+    @Test
+    fun `restore preserves cursor and contents`() {
+        val queue = DeckQueue()
+
+        queue.restore(listOf(track(1), track(2), track(3)), 1)
+
+        assertEquals(listOf(1L, 2L, 3L), queue.snapshot().map { it.id })
+        assertEquals(1, queue.currentIndex)
+        assertEquals(2L, queue.current?.id)
+    }
+
+    @Test
     fun `replaceAll resets the cursor`() {
         val queue = DeckQueue(listOf(track(1), track(2)))
         queue.next()

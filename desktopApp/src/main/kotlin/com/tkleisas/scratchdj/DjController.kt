@@ -6,11 +6,15 @@ import androidx.compose.runtime.mutableStateOf
 import com.tkleisas.scratchdj.audio.DjEngine
 import com.tkleisas.scratchdj.audio.SyncMath
 import com.tkleisas.scratchdj.data.AudioFormats
+import com.tkleisas.scratchdj.data.DeckSession
 import com.tkleisas.scratchdj.data.DeckQueue
+import com.tkleisas.scratchdj.data.SessionSnapshot
 import com.tkleisas.scratchdj.data.QueuePresetData
 import com.tkleisas.scratchdj.data.QueuePresetSummary
+import com.tkleisas.scratchdj.data.SearchPage
 import com.tkleisas.scratchdj.data.Track
 import com.tkleisas.scratchdj.desktop.DesktopPcmCache
+import com.tkleisas.scratchdj.desktop.DesktopSessionStore
 import com.tkleisas.scratchdj.desktop.DesktopPresetStore
 import com.tkleisas.scratchdj.model.DeckSide
 import com.tkleisas.scratchdj.model.DeckUiState
@@ -37,6 +41,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
@@ -47,6 +53,11 @@ import kotlin.math.min
 class DjController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val preferences = Preferences.userNodeForPackage(DjController::class.java)
+    private val sessionStore = DesktopSessionStore()
+    private val sessionSaveMutex = Mutex()
+    private var sessionSaveJob: Job? = null
+    private var lastSessionSaveAt = 0L
+    private var restoredSession: SessionSnapshot? = null
     val scanDirectories = mutableStateOf(loadScanDirectories())
 
     private val queueA = DeckQueue()
@@ -122,12 +133,14 @@ class DjController {
     val fxPadActive = mutableStateOf<Set<Pair<FxRack, FxEffect>>>(emptySet())
 
     init {
+        restoreSessionQueues()
         if (!DjEngine.start()) {
             message.value = DjEngine.lastError().ifBlank { "Audio engine failed to start" }
         }
         DjEngine.setCrossfader(crossfader.value)
         applyFxState()
         updateFxTempo()
+        restoreLastTracks()
         scope.launch { pollEngine() }
     }
 
@@ -138,6 +151,8 @@ class DjController {
             try {
                 val found = withContext(Dispatchers.IO) { scanLibrary() }
                 library = found
+                searchCacheTerm = null
+                searchCache = emptyList()
                 libraryCount.intValue = found.size
                 if (found.isEmpty()) {
                     message.value = "No supported audio files found in Music"
@@ -209,15 +224,35 @@ class DjController {
         syncLibrary()
     }
 
-    suspend fun search(term: String): List<Track> {
-        if (term.isBlank()) return library.take(500)
-        val needle = term.trim().lowercase(Locale.US)
-        return library.filter {
-            it.title.lowercase(Locale.US).contains(needle) ||
-                it.artist.lowercase(Locale.US).contains(needle) ||
-                it.album.lowercase(Locale.US).contains(needle)
-        }.take(500)
-    }
+    private var searchCacheTerm: String? = null
+    private var searchCache: List<Track> = emptyList()
+
+    suspend fun searchPage(term: String, offset: Int, limit: Int): SearchPage =
+        withContext(Dispatchers.Default) {
+            val cacheKey = term.trim()
+            val filtered = if (searchCacheTerm == cacheKey) {
+                searchCache
+            } else {
+                val needle = cacheKey.lowercase(Locale.US)
+                val matches = if (needle.isBlank()) {
+                    library
+                } else {
+                    library.filter {
+                        it.title.lowercase(Locale.US).contains(needle) ||
+                            it.artist.lowercase(Locale.US).contains(needle) ||
+                            it.album.lowercase(Locale.US).contains(needle)
+                    }
+                }
+                searchCacheTerm = cacheKey
+                searchCache = matches
+                matches
+            }
+            SearchPage(
+                tracks = filtered.drop(offset).take(limit),
+                total = filtered.size,
+                offset = offset,
+            )
+        }
 
     fun deck(side: DeckSide) = if (side == DeckSide.A) deckA else deckB
     fun queue(side: DeckSide) = if (side == DeckSide.A) queueAState else queueBState
@@ -243,6 +278,7 @@ class DjController {
     }
 
     fun removeFromQueue(trackId: Long, side: DeckSide) {
+        cancelCrossfade(side)
         rawQueue(side).remove(trackId)
         publishQueue(side)
     }
@@ -292,8 +328,10 @@ class DjController {
         side: DeckSide,
         autoPlay: Boolean = false,
         recordHistory: Boolean = true,
+        startPositionMs: Long = 0L,
+        selectQueue: Boolean = true,
     ) {
-        rawQueue(side).select(track.id)
+        if (selectQueue) rawQueue(side).select(track.id)
         cancelCrossfade(side)
         val holder = deck(side)
         val current = holder.value.track
@@ -336,11 +374,22 @@ class DjController {
                 LoadResult.Success -> {
                     val peaks = DjEngine.waveform(side.index, 8192)
                     val duration = DjEngine.durationMs(side.index)
+                    val restoredPosition = if (startPositionMs > 0L && duration > 0L) {
+                        startPositionMs.coerceIn(0L, duration - 1L)
+                    } else {
+                        0L
+                    }
+                    if (restoredPosition > 0L && duration > 0L) {
+                        DjEngine.seekFraction(
+                            side.index,
+                            restoredPosition.toFloat() / duration.toFloat(),
+                        )
+                    }
                     holder.value = holder.value.copy(
                         track = track,
                         peaks = peaks,
                         isPlaying = false,
-                        positionMs = 0L,
+                        positionMs = restoredPosition,
                         durationMs = duration,
                         isLoading = false,
                         loadingTitle = null,
@@ -352,6 +401,7 @@ class DjController {
                     )
                     if (autoPlay) DjEngine.setPlaying(side.index, true)
                     analyzeBpm(side, track, duration, generation)
+                    scheduleSessionSave()
                 }
 
                 is LoadResult.Failure -> {
@@ -385,6 +435,7 @@ class DjController {
         val queue = rawQueue(side)
         if (side == DeckSide.A) queueAState.value = queue.snapshot()
         else queueBState.value = queue.snapshot()
+        scheduleSessionSave()
     }
 
     private data class CrossfadePrep(
@@ -607,6 +658,103 @@ class DjController {
         DjEngine.setSlipMode(side.index, state.slipMode)
     }
 
+    private fun restoreSessionQueues() {
+        val snapshot = sessionStore.load() ?: return
+        restoredSession = snapshot
+        queueA.restore(snapshot.deckA.tracks, snapshot.deckA.currentIndex)
+        queueB.restore(snapshot.deckB.tracks, snapshot.deckB.currentIndex)
+        publishQueue(DeckSide.A)
+        publishQueue(DeckSide.B)
+    }
+
+    private fun restoreLastTracks() {
+        val snapshot = restoredSession ?: return
+        restoreLastTrack(DeckSide.A, snapshot.deckA)
+        restoreLastTrack(DeckSide.B, snapshot.deckB)
+    }
+
+    private fun restoreLastTrack(side: DeckSide, session: DeckSession) {
+        val track = session.lastTrack ?: return
+        val state = deck(side).value
+        if (state.track != null || state.isLoading) return
+        loadTrack(
+            track = track,
+            side = side,
+            autoPlay = false,
+            recordHistory = false,
+            startPositionMs = session.positionMs,
+            selectQueue = false,
+        )
+    }
+
+    private fun sessionSnapshot(): SessionSnapshot {
+        val stateA = deckA.value
+        val stateB = deckB.value
+        val restoredA = restoredSession?.deckA
+        val restoredB = restoredSession?.deckB
+        return SessionSnapshot(
+            deckA = DeckSession(
+                tracks = queueA.snapshot(),
+                currentIndex = queueA.currentIndex,
+                lastTrack = stateA.track ?: restoredA?.lastTrack,
+                positionMs = if (stateA.track == null) {
+                    restoredA?.positionMs ?: 0L
+                } else {
+                    stateA.positionMs
+                },
+            ),
+            deckB = DeckSession(
+                tracks = queueB.snapshot(),
+                currentIndex = queueB.currentIndex,
+                lastTrack = stateB.track ?: restoredB?.lastTrack,
+                positionMs = if (stateB.track == null) {
+                    restoredB?.positionMs ?: 0L
+                } else {
+                    stateB.positionMs
+                },
+            ),
+        )
+    }
+
+    fun persistSession() {
+        val snapshot = sessionSnapshot()
+        scope.launch(Dispatchers.IO) {
+            try {
+                sessionSaveMutex.withLock { sessionStore.save(snapshot) }
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    private fun scheduleSessionSave() {
+        sessionSaveJob?.cancel()
+        sessionSaveJob = scope.launch {
+            delay(350)
+            persistSession()
+        }
+    }
+
+    fun nextTrack(side: DeckSide): Track? = rawQueue(side).peekNext()
+
+    fun moveQueueItem(side: DeckSide, trackId: Long, delta: Int): Boolean {
+        val queue = rawQueue(side)
+        val from = queue.snapshot().indexOfFirst { it.id == trackId }
+        if (from < 0) return false
+        return moveQueueItemTo(side, trackId, from + delta)
+    }
+
+    fun moveQueueItemTo(side: DeckSide, trackId: Long, targetIndex: Int): Boolean {
+        val queue = rawQueue(side)
+        val from = queue.snapshot().indexOfFirst { it.id == trackId }
+        if (from < 0 || queue.size == 0) return false
+        val to = targetIndex.coerceIn(0, queue.size - 1)
+        if (from == to) return false
+        cancelCrossfade(side)
+        if (!queue.move(from, to)) return false
+        publishQueue(side)
+        return true
+    }
+
     private suspend fun pollEngine() {
         while (scope.isActive) {
             if (DjEngine.consumeCrossfadeComplete(DeckSide.A.index)) {
@@ -633,6 +781,11 @@ class DjController {
                 }
             }
 
+            val now = System.currentTimeMillis()
+            if (now - lastSessionSaveAt >= 2_000L) {
+                lastSessionSaveAt = now
+                persistSession()
+            }
             latencyMs.intValue = DjEngine.latencyMs()
             bufferFrames.intValue = DjEngine.bufferFrames()
             sampleRate.intValue = DjEngine.sampleRate()
@@ -664,12 +817,14 @@ class DjController {
         DjEngine.togglePlaying(side.index)
         val holder = deck(side)
         holder.value = holder.value.copy(isPlaying = DjEngine.isPlaying(side.index))
+        scheduleSessionSave()
     }
 
     fun seekFraction(side: DeckSide, fraction: Float) {
         if (deck(side).value.track == null) return
         cancelCrossfade(side)
         DjEngine.seekFraction(side.index, fraction)
+        scheduleSessionSave()
     }
 
     fun setVolume(side: DeckSide, value: Float) {
@@ -953,6 +1108,7 @@ class DjController {
         for (side in sides) {
             val tracks = if (side == DeckSide.A) data.deckA else data.deckB
             val queue = rawQueue(side)
+            cancelCrossfade(side)
             queue.replaceAll(tracks)
             val current = deck(side).value.track
             if (current != null && tracks.any { it.id == current.id }) queue.select(current.id)
@@ -1073,6 +1229,7 @@ class DjController {
         DjEngine.setPlaying(side.index, playing)
         val holder = deck(side)
         holder.value = holder.value.copy(isPlaying = DjEngine.isPlaying(side.index))
+        scheduleSessionSave()
     }
 
     fun setCuePoint(side: DeckSide) {
@@ -1139,6 +1296,10 @@ class DjController {
     }
 
     fun shutdown() {
+        try {
+            sessionStore.save(sessionSnapshot())
+        } catch (_: Throwable) {
+        }
         scope.cancel()
         DjEngine.shutdown()
     }

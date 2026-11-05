@@ -2,6 +2,7 @@ package com.tkleisas.scratchdj.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,12 +35,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +55,7 @@ import com.tkleisas.scratchdj.model.DeckSide
 import com.tkleisas.scratchdj.ui.theme.ScratchBackground
 import com.tkleisas.scratchdj.ui.theme.ScratchOutline
 import com.tkleisas.scratchdj.ui.theme.ScratchSurfaceRaised
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 @Composable
@@ -186,12 +191,16 @@ fun QueueOverlay(
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    itemsIndexed(queue) { index, track ->
+                    itemsIndexed(queue, key = { _, track -> track.id }) { index, track ->
                         QueueRow(
                             index = index,
+                            count = queue.size,
                             track = track,
                             accent = accent,
                             isCurrent = track.id == currentId,
+                            onMoveUp = { controller.moveQueueItem(side, track.id, -1) },
+                            onMoveDown = { controller.moveQueueItem(side, track.id, 1) },
+                            onMoveTo = { controller.moveQueueItemTo(side, track.id, it) },
                             onPlay = {
                                 controller.playFromQueue(track.id, side)
                                 onDismiss()
@@ -443,19 +452,74 @@ private fun QueueLoadPanel(
 }
 
 @Composable
+private fun QueueDragHandle(
+    accent: Color,
+    index: Int,
+    count: Int,
+    onMoveTo: (Int) -> Unit,
+) {
+    val rowHeight = with(LocalDensity.current) { 40.dp.toPx() }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    Box(
+        modifier = Modifier
+            .size(26.dp)
+            .pointerInput(index, count) {
+                detectDragGestures(
+                    onDragStart = { dragOffset = 0f },
+                    onDragCancel = { dragOffset = 0f },
+                    onDragEnd = {
+                        val target = (index + (dragOffset / rowHeight).roundToInt())
+                            .coerceIn(0, count - 1)
+                        if (target != index) onMoveTo(target)
+                        dragOffset = 0f
+                    },
+                    onDrag = { change, amount ->
+                        change.consume()
+                        dragOffset += amount.y
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "≡",
+            color = accent.copy(alpha = 0.8f),
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
 private fun QueueRow(
     index: Int,
+    count: Int,
     track: Track,
     accent: Color,
     isCurrent: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onMoveTo: (Int) -> Unit,
     onPlay: () -> Unit,
     onRemove: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (isCurrent) accent.copy(alpha = 0.08f) else Color.Transparent,
+                RoundedCornerShape(4.dp),
+            )
+            .padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        QueueDragHandle(
+            accent = accent,
+            index = index,
+            count = count,
+            onMoveTo = onMoveTo,
+        )
         Text(
             text = (index + 1).toString().padStart(2, '0'),
             color = ScratchOutline,
@@ -493,6 +557,22 @@ private fun QueueRow(
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.width(42.dp),
         )
+        TextButton(
+            onClick = onMoveUp,
+            enabled = index > 0,
+            modifier = Modifier.height(30.dp).width(26.dp),
+            contentPadding = PaddingValues(0.dp),
+        ) {
+            Text("↑", color = ScratchOutline, fontSize = 14.sp)
+        }
+        TextButton(
+            onClick = onMoveDown,
+            enabled = index < count - 1,
+            modifier = Modifier.height(30.dp).width(26.dp),
+            contentPadding = PaddingValues(0.dp),
+        ) {
+            Text("↓", color = ScratchOutline, fontSize = 14.sp)
+        }
         FilledTonalButton(
             onClick = onPlay,
             modifier = Modifier.height(30.dp),

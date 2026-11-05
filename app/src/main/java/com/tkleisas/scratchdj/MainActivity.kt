@@ -52,6 +52,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onPause() {
+        super.onPause()
+        if (::controller.isInitialized) {
+            controller.persistSession()
+        }
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
@@ -78,6 +85,10 @@ private fun ScratchRoot(controller: DjController) {
     var granted by remember { mutableStateOf(hasAudioPermission(context)) }
     var requestedOnce by rememberSaveable { mutableStateOf(false) }
     var notificationRequested by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(granted) {
+        if (granted) controller.restoreLastTracks()
+    }
 
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),

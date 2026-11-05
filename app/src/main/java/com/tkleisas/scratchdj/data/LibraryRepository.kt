@@ -17,7 +17,14 @@ class LibraryRepository(
         tracks.size
     }
 
-    fun search(term: String, limit: Int = 500): List<Track> = database.search(term, limit)
+    fun search(term: String, limit: Int = Int.MAX_VALUE, offset: Int = 0): List<Track> =
+        database.search(term, limit, offset)
+
+    fun searchPage(term: String, offset: Int, limit: Int): SearchPage = SearchPage(
+        tracks = database.search(term, limit, offset),
+        total = database.count(term),
+        offset = offset,
+    )
 
     fun count(): Int = database.count()
 
