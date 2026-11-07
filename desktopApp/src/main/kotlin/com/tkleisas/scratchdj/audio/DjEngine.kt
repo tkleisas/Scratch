@@ -114,6 +114,8 @@ object DjEngine {
     fun waveform(deck: Int, buckets: Int): FloatArray = nativeGetWaveform(deck, buckets)
     fun analyzeBpm(deck: Int, expectedDurationMs: Long): Float =
         nativeAnalyzeBpm(deck, expectedDurationMs)
+    fun analyzeBeatOffset(deck: Int, expectedDurationMs: Long, bpm: Float): Float =
+        nativeAnalyzeBeatOffset(deck, expectedDurationMs, bpm)
     fun spectrum(): FloatArray = nativeGetSpectrum()
     fun sampleRate(): Int = nativeGetSampleRate()
     fun latencyMs(): Int = nativeGetLatencyMs()
@@ -201,6 +203,11 @@ object DjEngine {
     private external fun nativeSetSlipMode(deck: Int, enabled: Boolean)
     private external fun nativeGetWaveform(deck: Int, buckets: Int): FloatArray
     private external fun nativeAnalyzeBpm(deck: Int, expectedDurationMs: Long): Float
+    private external fun nativeAnalyzeBeatOffset(
+        deck: Int,
+        expectedDurationMs: Long,
+        bpm: Float,
+    ): Float
     private external fun nativeGetSpectrum(): FloatArray
     private external fun nativeGetSampleRate(): Int
     private external fun nativeGetLatencyMs(): Int

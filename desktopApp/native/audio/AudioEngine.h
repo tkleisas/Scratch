@@ -37,6 +37,7 @@ public:
     int LatencyMs() const;
     int BufferFrames() const;
     void GetSpectrum(float* out, int count) const;
+    std::string TakeError() { return {}; }
 
 private:
     void RenderLoop();

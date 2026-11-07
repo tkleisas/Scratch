@@ -44,12 +44,16 @@ public:
     int LatencyMs() const;
     int BufferFrames() const;
     void GetSpectrum(float* out, int count) const;
+    std::string TakeError();
 
 private:
+    void ReportError(const std::string& error);
     bool OpenStream(std::string& error, oboe::SharingMode sharingMode);
 
     std::shared_ptr<oboe::AudioStream> stream_;
     std::mutex streamMutex_;
+    std::mutex errorMutex_;
+    std::string pendingError_;
 
     DeckPair deckPairs_[2];
     FxRack fxRacks_[3];

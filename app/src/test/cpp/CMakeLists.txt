@@ -35,7 +35,7 @@ add_executable(scratch_tests
     "${MAIN_CPP_DIR}/third_party/yawn/audio/TransientDetector.cpp"
     "${MAIN_CPP_DIR}/third_party/yawn/effects/Filter.cpp"
     "${MAIN_CPP_DIR}/third_party/yawn/effects/Delay.cpp"
-    "${MAIN_CPP_DIR}/third_party/yawn/effects/PlateReverb.cpp"
+    "${MAIN_CPP_DIR}/third_party/yawn/effects/HallReverb.cpp"
     "${MAIN_CPP_DIR}/third_party/yawn/effects/TapeEmulation.cpp"
     "${MAIN_CPP_DIR}/third_party/yawn/effects/Compressor.cpp"
     "${MAIN_CPP_DIR}/third_party/yawn/effects/Limiter.cpp")

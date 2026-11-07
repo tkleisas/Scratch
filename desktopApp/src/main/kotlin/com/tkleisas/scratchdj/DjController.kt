@@ -4,6 +4,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import com.tkleisas.scratchdj.audio.DjEngine
+import com.tkleisas.scratchdj.audio.BeatSyncMath
 import com.tkleisas.scratchdj.audio.SyncMath
 import com.tkleisas.scratchdj.data.AudioFormats
 import com.tkleisas.scratchdj.data.DeckSession
@@ -87,6 +88,8 @@ class DjController {
     val deckB = mutableStateOf(DeckUiState())
     val queueAState = mutableStateOf<List<Track>>(emptyList())
     val queueBState = mutableStateOf<List<Track>>(emptyList())
+    private val nextTrackA = mutableStateOf<Track?>(null)
+    private val nextTrackB = mutableStateOf<Track?>(null)
     val crossfader = mutableFloatStateOf(0.5f)
     val libraryCount = mutableIntStateOf(0)
     val isSyncing = mutableStateOf(false)
@@ -331,7 +334,10 @@ class DjController {
         startPositionMs: Long = 0L,
         selectQueue: Boolean = true,
     ) {
-        if (selectQueue) rawQueue(side).select(track.id)
+        if (selectQueue) {
+            rawQueue(side).select(track.id)
+            publishQueue(side)
+        }
         cancelCrossfade(side)
         val holder = deck(side)
         val current = holder.value.track
@@ -395,6 +401,7 @@ class DjController {
                         loadingTitle = null,
                         loadProgress = 0f,
                         bpm = track.bpm,
+                        beatOffsetMs = null,
                         loopIn = null,
                         loopOut = null,
                         loopEnabled = false,
@@ -433,8 +440,13 @@ class DjController {
 
     private fun publishQueue(side: DeckSide) {
         val queue = rawQueue(side)
-        if (side == DeckSide.A) queueAState.value = queue.snapshot()
-        else queueBState.value = queue.snapshot()
+        if (side == DeckSide.A) {
+            queueAState.value = queue.snapshot()
+            nextTrackA.value = queue.peekNext()
+        } else {
+            queueBState.value = queue.snapshot()
+            nextTrackB.value = queue.peekNext()
+        }
         scheduleSessionSave()
     }
 
@@ -634,6 +646,7 @@ class DjController {
             loadingTitle = null,
             loadProgress = 0f,
             bpm = next.bpm,
+            beatOffsetMs = null,
             loopIn = null,
             loopOut = null,
             loopEnabled = false,
@@ -734,7 +747,8 @@ class DjController {
         }
     }
 
-    fun nextTrack(side: DeckSide): Track? = rawQueue(side).peekNext()
+    fun nextTrack(side: DeckSide): Track? =
+        if (side == DeckSide.A) nextTrackA.value else nextTrackB.value
 
     fun moveQueueItem(side: DeckSide, trackId: Long, delta: Int): Boolean {
         val queue = rawQueue(side)
@@ -891,15 +905,19 @@ class DjController {
             message.value = "Load a track on both decks to sync"
             return
         }
-        if (state.bpm > 0f && other.bpm > 0f) {
+        if (state.bpm > 0f && other.bpm > 0f &&
+            state.beatOffsetMs != null && other.beatOffsetMs != null
+        ) {
             applySync(side)
             return
         }
 
-        message.value = "Analyzing BPM for sync…"
+        message.value = "Analyzing BPM and beat grid…"
         scope.launch {
             var thisBpm = state.bpm
             var otherBpm = other.bpm
+            var thisOffset = state.beatOffsetMs
+            var otherOffset = other.beatOffsetMs
             if (thisBpm <= 0f) {
                 thisBpm = withContext(Dispatchers.IO) {
                     DjEngine.analyzeBpm(side.index, state.durationMs)
@@ -910,14 +928,34 @@ class DjController {
                     DjEngine.analyzeBpm(side.other().index, other.durationMs)
                 }
             }
+            if (thisOffset == null && thisBpm > 0f) {
+                thisOffset = withContext(Dispatchers.IO) {
+                    DjEngine.analyzeBeatOffset(side.index, state.durationMs, thisBpm)
+                }
+            }
+            if (otherOffset == null && otherBpm > 0f) {
+                otherOffset = withContext(Dispatchers.IO) {
+                    DjEngine.analyzeBeatOffset(
+                        side.other().index,
+                        other.durationMs,
+                        otherBpm,
+                    )
+                }
+            }
 
             val holder = deck(side)
-            if (thisBpm > 0f && holder.value.track?.id == state.track?.id) {
-                holder.value = holder.value.copy(bpm = thisBpm)
+            if (holder.value.track?.id == state.track?.id) {
+                holder.value = holder.value.copy(
+                    bpm = thisBpm,
+                    beatOffsetMs = thisOffset,
+                )
             }
             val otherHolder = deck(side.other())
-            if (otherBpm > 0f && otherHolder.value.track?.id == other.track?.id) {
-                otherHolder.value = otherHolder.value.copy(bpm = otherBpm)
+            if (otherHolder.value.track?.id == other.track?.id) {
+                otherHolder.value = otherHolder.value.copy(
+                    bpm = otherBpm,
+                    beatOffsetMs = otherOffset,
+                )
             }
             updateFxTempo()
             if (thisBpm > 0f && otherBpm > 0f) {
@@ -939,8 +977,35 @@ class DjController {
         }
         setTempo(side, ratio)
         if (!state.keyLock) toggleKeyLock(side)
-        message.value = "Deck ${side.letter} synced to " +
-            String.format(java.util.Locale.US, "%.1f", targetBpm) + " BPM"
+
+        val thisOffset = state.beatOffsetMs
+        val otherOffset = other.beatOffsetMs
+        if (thisOffset != null && otherOffset != null &&
+            state.bpm > 0f && other.bpm > 0f && state.durationMs > 1L
+        ) {
+            val otherPosition = DjEngine.positionMs(side.other().index)
+            val targetPhase = BeatSyncMath.phase(otherPosition, otherOffset, other.bpm)
+            val currentPosition = DjEngine.positionMs(side.index)
+            val aligned = BeatSyncMath.alignedPositionMs(
+                positionMs = currentPosition,
+                offsetMs = thisOffset,
+                bpm = state.bpm,
+                targetPhase = targetPhase,
+                durationMs = state.durationMs,
+            )
+            if (aligned != null && aligned != currentPosition) {
+                DjEngine.seekFraction(
+                    side.index,
+                    aligned.toFloat() / state.durationMs.toFloat(),
+                )
+                deck(side).value = deck(side).value.copy(positionMs = aligned)
+            }
+            message.value = "Deck ${side.letter} beat-synced to " +
+                String.format(java.util.Locale.US, "%.1f", targetBpm) + " BPM"
+        } else {
+            message.value = "Deck ${side.letter} synced to " +
+                String.format(java.util.Locale.US, "%.1f", targetBpm) + " BPM"
+        }
     }
 
     fun toggleLoop(side: DeckSide) {

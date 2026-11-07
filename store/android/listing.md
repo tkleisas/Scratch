@@ -4,7 +4,7 @@
 
 - **App name (max 30):** Scratch: Vinyl DJ
 - **Package name:** `com.tkleisas.scratchdj`
-- **Version:** 0.4.0 (versionCode 400000)
+- **Version:** 0.5.0 (versionCode 500000)
 - **Category:** Music & Audio
 - **Contact email:** tasos.kleisas@gmail.com
 - **Privacy policy:** https://tkleisas.github.io/scratch/privacy/
@@ -34,6 +34,8 @@ FEATURES
 • Cue points, four hot cues per deck, and slip scratching
 • Whole-track and scrolling waveforms with a configurable BPM window
 • Queue auto-crossfade with a ghost waveform handoff
+• Last-session restore, queue reordering, and next-track display
+• Beat-phase SYNC with on-demand BPM and beat-grid analysis
 • Per-rack FX: ordered insert chains plus seven punch pads
 • Filter, Crush, Echo, Plate Reverb, Tape, Compressor and Limiter
 • Local library search with persistent queues and queue presets
@@ -52,6 +54,6 @@ Android 10 or newer. A local music library is required. Headphones or speakers a
 
 Scratch is a Bokontep music project.
 
-## Release notes (v0.4.0)
+## Release notes (v0.5.0)
 
-Waveforms now offer whole-track and scrolling views with a BPM-sized window and overview minimap. Add cue points, four hot cues, and slip scratching; auto-crossfade the next queued track with a ghost waveform handoff. Choose from Classic, High Contrast, Midnight, and Ember color themes. This release also includes audio focus, foreground playback, tempo-synced echo, and the full crossfader/FX workflow.
+Audio focus conflicts now pause playback and show a clear message instead of failing silently. Queue next-track updates and end-of-queue state are fixed, queues can be reordered and auto-scroll to the loaded track, and the last session restores with tracks paused. The reverb is now a Freeverb-style hall/room reverb, and Beat SYNC aligns beat phase after matching tempo. This release also includes session restore, paged library search, and the full waveform/crossfade/theme workflow.

@@ -19,7 +19,7 @@ add_library(scratchdj SHARED
     third_party/yawn/audio/TransientDetector.cpp
     third_party/yawn/effects/Filter.cpp
     third_party/yawn/effects/Delay.cpp
-    third_party/yawn/effects/PlateReverb.cpp
+    third_party/yawn/effects/HallReverb.cpp
     third_party/yawn/effects/TapeEmulation.cpp
     third_party/yawn/effects/Compressor.cpp
     third_party/yawn/effects/Limiter.cpp)

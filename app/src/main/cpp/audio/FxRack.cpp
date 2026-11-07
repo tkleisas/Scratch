@@ -9,7 +9,7 @@
 #include "effects/Delay.h"
 #include "effects/Filter.h"
 #include "effects/Limiter.h"
-#include "effects/PlateReverb.h"
+#include "effects/HallReverb.h"
 #include "effects/TapeEmulation.h"
 
 namespace {
@@ -90,7 +90,7 @@ void FxRack::Init(double sampleRate, int maxBlockSize) {
                 case kFilter: effect = std::make_unique<yawn::effects::Filter>(); break;
                 case kCrush: effect = std::make_unique<yawn::effects::Bitcrusher>(); break;
                 case kEcho: effect = std::make_unique<yawn::effects::Delay>(); break;
-                case kReverb: effect = std::make_unique<yawn::effects::PlateReverb>(); break;
+                case kReverb: effect = std::make_unique<yawn::effects::HallReverb>(); break;
                 case kTape: effect = std::make_unique<yawn::effects::TapeEmulation>(); break;
                 case kCompressor: effect = std::make_unique<yawn::effects::Compressor>(); break;
                 case kLimiter: effect = std::make_unique<yawn::effects::Limiter>(); break;

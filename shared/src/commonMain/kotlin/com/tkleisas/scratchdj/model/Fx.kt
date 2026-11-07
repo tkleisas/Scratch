@@ -134,7 +134,7 @@ enum class FxEffect(
         mixParamIndex = 2,
     ),
     Reverb(
-        label = "Reverb",
+        label = "Hall Reverb",
         shortLabel = "REV",
         params = listOf(
             FxParamSpec("Pre-Delay", 0f, 1f, 0.04f, FxValueFormat.PreDelay),

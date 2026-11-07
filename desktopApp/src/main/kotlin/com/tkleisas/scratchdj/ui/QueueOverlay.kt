@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -65,11 +66,19 @@ fun QueueOverlay(
     val queue = controller.queue(side).value
     val accent = deckAccent(side)
     val currentId = controller.deck(side).value.track?.id
+    val currentIndex = queue.indexOfFirst { it.id == currentId }
+    val queueListState = rememberLazyListState()
     var showSave by remember { mutableStateOf(false) }
     var showLoad by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
     var saveScope by remember { mutableStateOf(side.letter) }
     var status by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(currentId, currentIndex) {
+        if (currentIndex >= 0) {
+            queueListState.scrollToItem(currentIndex)
+        }
+    }
 
     LaunchedEffect(status) {
         if (status != null) {
@@ -187,7 +196,10 @@ fun QueueOverlay(
                     )
                 }
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = queueListState,
+                    modifier = Modifier.fillMaxSize(),
+                ) {
                     itemsIndexed(queue, key = { _, track -> track.id }) { index, track ->
                         QueueRow(
                             index = index,

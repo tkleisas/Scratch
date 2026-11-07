@@ -88,7 +88,19 @@ void AudioEngine::Stop() {
 
 void AudioEngine::onErrorBeforeClose(oboe::AudioStream*, oboe::Result) {}
 
-void AudioEngine::onErrorAfterClose(oboe::AudioStream* stream, oboe::Result) {
+void AudioEngine::ReportError(const std::string& error) {
+    std::lock_guard<std::mutex> lock(errorMutex_);
+    pendingError_ = error;
+}
+
+std::string AudioEngine::TakeError() {
+    std::lock_guard<std::mutex> lock(errorMutex_);
+    std::string error = std::move(pendingError_);
+    pendingError_.clear();
+    return error;
+}
+
+void AudioEngine::onErrorAfterClose(oboe::AudioStream* stream, oboe::Result error) {
     std::lock_guard<std::mutex> lock(streamMutex_);
     if (!stream_ || stream != stream_.get()) {
         return;
@@ -97,9 +109,12 @@ void AudioEngine::onErrorAfterClose(oboe::AudioStream* stream, oboe::Result) {
     // Oboe has already stopped and closed the underlying stream. Reopen on
     // the new default device (headphone/BT/SCO change) and keep rendering.
     stream_.reset();
-    std::string error;
-    if (!OpenStream(error, oboe::SharingMode::Exclusive) &&
-        !OpenStream(error, oboe::SharingMode::Shared)) {
+    std::string openError;
+    if (!OpenStream(openError, oboe::SharingMode::Exclusive) &&
+        !OpenStream(openError, oboe::SharingMode::Shared)) {
+        ReportError(
+            std::string("Audio output unavailable: ") + oboe::convertToText(error) +
+            ". Another app may be using the audio device.");
         return;
     }
 
@@ -118,6 +133,8 @@ void AudioEngine::onErrorAfterClose(oboe::AudioStream* stream, oboe::Result) {
     if (stream_->requestStart() != oboe::Result::OK) {
         stream_->close();
         stream_.reset();
+        ReportError(
+            "Could not restart audio output. Another app may be using the audio device.");
     }
 }
 

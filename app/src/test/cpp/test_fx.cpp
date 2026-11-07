@@ -88,6 +88,28 @@ TEST(FxRack, PunchEchoProducesOutputAfterRelease) {
     EXPECT_GT(rms(buffer), 1e-5f);
 }
 
+TEST(FxRack, PunchReverbProducesTailAfterRelease) {
+    FxRack rack;
+    rack.Init(kSampleRate, 2048);
+    rack.SetEnabled(FxRack::kPunch, FxRack::kReverb, true);
+    rack.SetParam(FxRack::kPunch, FxRack::kReverb, 5, 1.0f);
+    rack.SetPunchSend(FxRack::kReverb, 1.0f);
+    rack.SetPunchActive(FxRack::kReverb, true);
+
+    std::vector<float> buffer(kFrames * 2);
+    fillSine(buffer, 1000.0f);
+    rack.Process(buffer.data(), kFrames);
+
+    rack.SetPunchActive(FxRack::kReverb, false);
+    float tail = 0.0f;
+    for (int block = 0; block < 12; ++block) {
+        std::fill(buffer.begin(), buffer.end(), 0.0f);
+        rack.Process(buffer.data(), kFrames);
+        for (float sample : buffer) tail = std::max(tail, std::fabs(sample));
+    }
+    EXPECT_GT(tail, 1e-5f);
+}
+
 TEST(FxRack, PunchLimiterActsAsSerialInsert) {
     FxRack rack;
     rack.Init(kSampleRate, 2048);

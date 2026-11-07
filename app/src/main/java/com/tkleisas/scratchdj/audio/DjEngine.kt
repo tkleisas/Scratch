@@ -28,6 +28,7 @@ object DjEngine {
         nativeConsumeCrossfadeComplete(deck)
     fun cancelCrossfade(deck: Int) = nativeCancelCrossfade(deck)
     fun lastError(): String = nativeGetLastError()
+    fun consumeAudioError(): String? = nativeConsumeAudioError()
     fun positionMs(deck: Int): Long = nativeGetPositionMs(deck)
     fun durationMs(deck: Int): Long = nativeGetDurationMs(deck)
     fun isPlaying(deck: Int): Boolean = nativeIsPlaying(deck)
@@ -86,6 +87,8 @@ object DjEngine {
     fun waveform(deck: Int, buckets: Int): FloatArray = nativeGetWaveform(deck, buckets)
     fun analyzeBpm(deck: Int, expectedDurationMs: Long): Float =
         nativeAnalyzeBpm(deck, expectedDurationMs)
+    fun analyzeBeatOffset(deck: Int, expectedDurationMs: Long, bpm: Float): Float =
+        nativeAnalyzeBeatOffset(deck, expectedDurationMs, bpm)
     fun spectrum(): FloatArray = nativeGetSpectrum()
     fun sampleRate(): Int = nativeGetSampleRate()
     fun latencyMs(): Int = nativeGetLatencyMs()
@@ -112,6 +115,7 @@ object DjEngine {
     private external fun nativeConsumeCrossfadeComplete(deck: Int): Boolean
     private external fun nativeCancelCrossfade(deck: Int)
     private external fun nativeGetLastError(): String
+    private external fun nativeConsumeAudioError(): String?
     private external fun nativeGetPositionMs(deck: Int): Long
     private external fun nativeGetDurationMs(deck: Int): Long
     private external fun nativeIsPlaying(deck: Int): Boolean
@@ -173,6 +177,11 @@ object DjEngine {
     private external fun nativeSetSlipMode(deck: Int, enabled: Boolean)
     private external fun nativeGetWaveform(deck: Int, buckets: Int): FloatArray
     private external fun nativeAnalyzeBpm(deck: Int, expectedDurationMs: Long): Float
+    private external fun nativeAnalyzeBeatOffset(
+        deck: Int,
+        expectedDurationMs: Long,
+        bpm: Float,
+    ): Float
     private external fun nativeGetSpectrum(): FloatArray
     private external fun nativeGetSampleRate(): Int
     private external fun nativeGetLatencyMs(): Int

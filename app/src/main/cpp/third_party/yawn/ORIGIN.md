@@ -13,7 +13,7 @@ Vendored DSP:
 - `effects/Filter.*`, `effects/FreqMap.h`
 - `effects/Bitcrusher.h`, `audio/Oversampling.h`
 - `effects/Delay.*`
-- `effects/PlateReverb.*`
+- `effects/HallReverb.*` — Freeverb-style room/hall reverb based on the public-domain Freeverb design by Jezar at Dreampoint.
 - `effects/TapeEmulation.*`
 - `effects/Compressor.*`
 - `effects/Limiter.*`

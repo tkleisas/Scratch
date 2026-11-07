@@ -7,7 +7,8 @@
 
 namespace {
 
-std::shared_ptr<TrackData> MakeClickTrack(int sampleRate, double bpm, double seconds) {
+std::shared_ptr<TrackData> MakeClickTrack(int sampleRate, double bpm, double seconds,
+                                         double startOffsetSeconds = 0.0) {
     auto track = std::make_shared<TrackData>();
     track->sampleRate = sampleRate;
     track->frames = static_cast<int64_t>(sampleRate * seconds);
@@ -15,7 +16,8 @@ std::shared_ptr<TrackData> MakeClickTrack(int sampleRate, double bpm, double sec
     track->samples.assign(static_cast<size_t>(track->frames) * 2, 0.0f);
 
     const int64_t beatFrames = static_cast<int64_t>(sampleRate * 60.0 / bpm);
-    for (int64_t start = 0; start < track->frames; start += beatFrames) {
+    const int64_t initial = static_cast<int64_t>(sampleRate * startOffsetSeconds);
+    for (int64_t start = initial; start < track->frames; start += beatFrames) {
         for (int i = 0; i < 500 && start + i < track->frames; ++i) {
             const float envelope = std::exp(-i / 90.0f);
             const float value = 0.8f * envelope * static_cast<float>(
@@ -39,6 +41,15 @@ TEST(BpmAnalyzer, Detects128BpmClickTrack) {
     const auto track = MakeClickTrack(44100, 128.0, 16.0);
     const float bpm = scratch::EstimateBpm(*track);
     EXPECT_NEAR(bpm, 128.0f, 2.0f);
+}
+
+TEST(BpmAnalyzer, DetectsBeatOffset) {
+    const auto track = MakeClickTrack(48000, 120.0, 20.0, 0.2);
+    const float bpm = scratch::EstimateBpm(*track);
+    ASSERT_NEAR(bpm, 120.0f, 2.0f);
+    const float offset = scratch::EstimateBeatOffset(*track, bpm);
+    const float expected = std::fmod(0.2f, 60.0f / bpm);
+    EXPECT_NEAR(offset, expected, 0.025f);
 }
 
 TEST(BpmAnalyzer, ReturnsZeroForSilence) {

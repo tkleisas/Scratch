@@ -11,7 +11,7 @@ namespace {
 
 template <typename Sample>
 float AnalyzeInterleaved(const Sample* samples, int64_t frames, int sampleRate,
-                         float scale) {
+                         float scale, float* beatOffsetSeconds = nullptr) {
     if (samples == nullptr || frames < 1024 || sampleRate < 8000) {
         return 0.0f;
     }
@@ -95,6 +95,32 @@ float AnalyzeInterleaved(const Sample* samples, int64_t frames, int sampleRate,
     while (bpm > 180.0) {
         bpm *= 0.5;
     }
+
+    if (beatOffsetSeconds != nullptr) {
+        const double beatSamples = static_cast<double>(sampleRate) * 60.0 / bpm;
+        constexpr int kPhaseBins = 96;
+        double bestPhase = 0.0;
+        double bestScore = -1.0;
+        const double tolerance = std::min(beatSamples * 0.08, sampleRate * 0.035);
+        for (int bin = 0; bin < kPhaseBins; ++bin) {
+            const double phase = beatSamples * bin / kPhaseBins;
+            double score = 0.0;
+            for (int64_t position : transients) {
+                double relative = std::fmod(static_cast<double>(position) - phase,
+                                            beatSamples);
+                if (relative < 0.0) relative += beatSamples;
+                const double distance = std::min(relative, beatSamples - relative);
+                if (distance < tolerance) {
+                    score += 1.0 - distance / tolerance;
+                }
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                bestPhase = phase;
+            }
+        }
+        *beatOffsetSeconds = static_cast<float>(bestPhase / sampleRate);
+    }
     return static_cast<float>(bpm);
 }
 
@@ -106,6 +132,24 @@ float EstimateBpm(const int16_t* interleaved, int64_t frames, int sampleRate) {
 
 float EstimateBpm(const float* interleaved, int64_t frames, int sampleRate) {
     return AnalyzeInterleaved(interleaved, frames, sampleRate, 1.0f);
+}
+
+float EstimateBeatOffset(const TrackData& track, float bpm) {
+    if (bpm <= 0.0f || track.frames < 1024 || track.sampleRate < 8000) {
+        return 0.0f;
+    }
+    float offset = 0.0f;
+    if (!track.samples.empty()) {
+        AnalyzeInterleaved(track.samples.data(), track.frames, track.sampleRate, 1.0f,
+                           &offset);
+    } else if (track.mapped) {
+        AnalyzeInterleaved(track.mapped->data, track.frames, track.sampleRate, 1.0f,
+                           &offset);
+    } else if (!track.pcm16.empty()) {
+        AnalyzeInterleaved(track.pcm16.data(), track.frames, track.sampleRate,
+                           1.0f / 32768.0f, &offset);
+    }
+    return offset;
 }
 
 float EstimateBpm(const TrackData& track) {

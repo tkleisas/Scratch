@@ -12,6 +12,7 @@ data class DeckUiState(
     val filterCutoff: Float = 0.5f,
     val volume: Float = 1f,
     val bpm: Float = 0f,
+    val beatOffsetMs: Float? = null,
     val eqNodes: List<EqNode> = EqNodes.defaults(),
     val eqBypassed: Boolean = false,
     val tempo: Float = 1f,

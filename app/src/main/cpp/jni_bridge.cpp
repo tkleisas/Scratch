@@ -268,6 +268,32 @@ Java_com_tkleisas_scratchdj_audio_DjEngine_nativeAnalyzeBpm(JNIEnv*, jobject, ji
     return scratch::EstimateBpm(*track);
 }
 
+JNIEXPORT jfloat JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeAnalyzeBeatOffset(
+    JNIEnv*, jobject, jint deck, jlong expectedDurationMs, jfloat bpm) {
+    if (!ValidDeck(deck) || bpm <= 0.0f) {
+        return 0.0f;
+    }
+    std::shared_ptr<TrackData> track;
+    {
+        std::lock_guard<std::mutex> lock(gEngineMutex);
+        if (!gEngine) {
+            return 0.0f;
+        }
+        track = gEngine->GetDeck(deck).GetTrackForUi();
+    }
+    if (!track || track->sampleRate <= 0) {
+        return 0.0f;
+    }
+    const double durationMs =
+        static_cast<double>(track->frames) * 1000.0 / track->sampleRate;
+    if (expectedDurationMs > 0 &&
+        std::abs(durationMs - static_cast<double>(expectedDurationMs)) > 150.0) {
+        return 0.0f;
+    }
+    return scratch::EstimateBeatOffset(*track, bpm) * 1000.0f;
+}
+
 JNIEXPORT jfloatArray JNICALL
 Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetSpectrum(JNIEnv* env, jobject) {
     constexpr int kBandCount = 32;
@@ -289,6 +315,18 @@ JNIEXPORT jstring JNICALL
 Java_com_tkleisas_scratchdj_audio_DjEngine_nativeGetLastError(JNIEnv* env, jobject) {
     std::lock_guard<std::mutex> lock(gEngineMutex);
     return ToJavaString(env, gLastError);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeConsumeAudioError(JNIEnv* env, jobject) {
+    std::string error;
+    {
+        std::lock_guard<std::mutex> lock(gEngineMutex);
+        if (gEngine) {
+            error = gEngine->TakeError();
+        }
+    }
+    return error.empty() ? nullptr : ToJavaString(env, error);
 }
 
 JNIEXPORT jlong JNICALL

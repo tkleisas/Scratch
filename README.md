@@ -23,7 +23,7 @@ This is an early development build, exercised on a physical Android 15 device an
 - Immersive full-screen landscape UI with dual rotating platters, waveforms, and a center mixer.
 - Four persisted color themes: **Classic** (the original default), **High Contrast**, **Midnight**, and **Ember**. Theme colors apply to both decks, the mixer, overlays, and settings on Android and desktop.
 - Oboe audio engine: one 48 kHz float output stream, low-latency performance mode, exclusive mode attempted first with shared-mode fallback, and automatic stream reopen after device disconnects.
-- Android audio focus and a foreground playback service with an ongoing notification and Pause action; playback keeps running when the app is backgrounded.
+- Android audio focus and a foreground playback service with an ongoing notification and Pause action; playback keeps running when the app is backgrounded. Focus denial/loss and output failures surface a toast/snackbar explaining that another app may be using audio.
 - WAV and AIFF/AIFC (uncompressed) playback: 8/16/24/32-bit PCM, 32-bit float WAV, mono or stereo, including AIFC `NONE`/`sowt`.
 - MP3, FLAC, OGG/Vorbis, and Opus decoding through `MediaExtractor` + `MediaCodec`.
 - Long compressed tracks are decoded once into a 16-bit stereo PCM cache, then memory-mapped into the native engine. A 59:57 mix works with instant seeking and scratching anywhere in the track; the cache is reused on later loads.
@@ -41,16 +41,16 @@ This is an early development build, exercised on a physical Android 15 device an
 - Per-deck channel volume in the mixer strip, from 0% to 150%, with independent A/B sliders.
 - Per-deck transport: PREV, PLAY/PAUSE, NEXT. NEXT pulls from the deck queue and is disabled when there is no next track; the next compressed queue track is prefetched into the PCM cache in the background. PREV uses per-deck play history.
 - BPM analysis on first load using a native onset/flux detector, persisted in SQLite. BPM is shown in the deck header and search results.
-- Tempo SYNC matches the other deck’s effective BPM (including its tempo shift) and enables key lock automatically. Missing BPMs are analyzed on demand when SYNC is pressed, with progress and result feedback.
+- Beat SYNC matches the other deck’s effective BPM and enables key lock automatically. It analyzes BPM and the strongest beat-grid offset when needed, then nudges the synced deck to the nearest matching beat phase. Missing analysis is reported in the status message.
 - Tempo reset: tap the `0` next to SYNC to return pitch to 0% instantly.
 - Looping: one-tap LOOP creates and enables a 4-second loop at the playhead. IN sets the loop start without engaging the loop; OUT sets the end and starts looping. CLR clears. A pending IN point is drawn on the waveform. Key-locked playback wraps the stretcher source at the loop seam instead of resetting it, so loops stay continuous.
 - Cue points and four hot cues per deck: CUE sets or jumps and pauses; hot-cue pads set empty slots or jump and play; long-press clears. Cues reset on track load and are session-only. SLIP mode makes platter scratches return to where playback would have reached on release.
 - Auto-crossfade: with Autoplay on and a next track in the deck queue, the next track is prepared ahead and fades in on the same deck over the configured duration. During the overlap, a temporary waveform window spans the crossfade: the outgoing track fades to an outline while the incoming track goes from a dashed outline to solid. Loading, NEXT/PREV, seeking, scratching, looping, pausing, or disabling Autoplay cancels the pending transition.
-- Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, plate reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves. Echo tempo sync follows the effective BPM of its rack's deck (the master rack follows the active crossfader side).
+- Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, hall reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves. Echo tempo sync follows the effective BPM of its rack's deck (the master rack follows the active crossfader side).
 - Waveforms computed from 8192 peak buckets at load and normalized for display. Two global views: **FULL** shows the whole track; **SCROLL** follows the playhead in a zoomed window with a whole-track minimap. Tap or drag either waveform to seek, and tap the **FULL/SCROLL** pill to switch views. The scrolling window is configured in seconds or beats and follows each deck's effective BPM.
 - Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards. Search results load in pages of 100 with the next page prefetched near the bottom; the header shows the full result count.
-- Per-deck queue rows can be reordered with a drag handle or up/down buttons while the current-track cursor follows the track.
-- The next queued track is shown in each deck’s queue bar.
+- Per-deck queue rows can be reordered with a drag handle or up/down buttons while the current-track cursor follows the track. Opening a queue scrolls to the currently loaded track.
+- The next queued track is shown in each deck’s queue bar and updates when the queue cursor changes, including at the end of the queue.
 - The active queues, current cursor, last loaded tracks, and paused positions are restored after an app restart. Restored tracks load paused.
 - Search overlay with one-tap add to Deck A or Deck B queues.
 - Per-deck queues are persistent playlists with a cursor: playing a track no longer removes it, and PREV/NEXT move backward/forward through the queue. The current track is highlighted in the queue overlay.
@@ -84,7 +84,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 
 - WAV/AIFF tracks are still parsed and held in memory; only compressed formats use the disk-backed cache yet.
 - The first load of a very long compressed track takes time (about two minutes for an hour-long MP3 on the test phone) while it decodes into the cache. Subsequent loads are fast. The PCM cache is capped at 3 GB and pruned at startup.
-- BPM is analyzed the first time a track is loaded, or on demand when SYNC is pressed. It is not a full library pre-analysis pass yet. Tempo SYNC does not phase/downbeat-align decks yet; beatgrid sync is next.
+- BPM is analyzed the first time a track is loaded, or on demand when SYNC is pressed. It is not a full library pre-analysis pass yet. Beat SYNC aligns detected beat phase, but full bar/downbeat grids and library-wide analysis are still future work.
 - Cue points and hot cues reset on track load and do not persist across restarts. SLIP currently applies to platter scratching only; hot-cue and loop slip behavior and per-track cue storage are not implemented.
 - Playback notifications currently expose Pause/stop only; a full media session with lock-screen controls and resume is not implemented.
 - Auto-crossfade is queue-based and does not beat-align the incoming track. If the next track is not decoded in time, or the crossfade duration is 0, autoplay falls back to advancing at the track end without overlap. Manual NEXT/PREV and other transport actions cancel an in-progress transition instead of starting another crossfade.
@@ -116,7 +116,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 | Spectrum | Master mix spectrum in the mixer; pre/post deck spectra in the EQ editor. |
 | SETTINGS | Appearance theme, Autoplay A/B, auto-crossfade, and waveform settings; on desktop, also library folders. Persisted across launches. |
 | TEMPO | 50%–200% playback rate. Tap `0` to reset to 0%. |
-| SYNC | Match the other deck’s effective BPM, analyze BPM on demand if needed, and enable key lock. |
+| SYNC | Match the other deck’s effective BPM, analyze BPM/beat offset on demand, align the nearest beat phase, and enable key lock. |
 | KEY | Enables WSOLA key lock; tempo changes no longer repitch. |
 | VOL A / VOL B | Per-deck output volume (0%–150%). |
 | IN | Set the loop start at the current playhead without starting the loop. |
@@ -126,7 +126,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 | HOLD / LATCH | Pad behavior in the FX overlay. HOLD is momentary; LATCH taps to toggle. |
 | CROSSFADER | Equal-power mix between Deck A and B. |
 | SEARCH + QUEUE | Search the SQLite index and add results to either deck queue. |
-| Queue bar | Shows the next queued track; tap OPEN to play or remove tracks, reorder with the drag handle/up-down buttons, navigate with PREV/NEXT, and save/load A, B, or A+B queue presets. |
+| Queue bar | Shows the next queued track; tap OPEN to scroll to the playing track, reorder with the drag handle/up-down buttons, play, remove, and save/load A, B, or A+B queue presets. |
 
 ## Architecture
 
@@ -200,14 +200,14 @@ The `app/src/main/cpp/third_party/yawn/` directory contains code copied from [YA
 - `audio/AudioBuffer.h` — buffer type used by the detector.
 - `audio/Oversampling.h` — 2× oversampling used by the nonlinear effects.
 - `effects/Biquad.h` — reusable biquad used by EQ, filters, and effects.
-- `effects/Filter.*`, `effects/Delay.*`, `effects/PlateReverb.*`, `effects/TapeEmulation.*`, `effects/Compressor.*`, `effects/Limiter.*` — the FX processors.
+- `effects/Filter.*`, `effects/Delay.*`, `effects/HallReverb.*`, `effects/TapeEmulation.*`, `effects/Compressor.*`, `effects/Limiter.*` — the FX processors.
 - `effects/Bitcrusher.h`, `effects/FreqMap.h` — crusher and log-frequency helpers.
 - `effects/AudioEffect.h`, `core/ParameterInfo.h`, `core/WidgetHint.h` — minimal compatibility shims replacing YAWN's DAW/UI effect base.
 - `LICENSE.txt` — YAWN's MIT license.
 
 Two minimal compatibility edits were applied: the vendored headers reference YAWN's `kDefaultSampleRate` constant, so the defaults were changed to `48000.0` to keep the files self-contained.
 
-Limiter and TapeEmulation are now wired into both the per-rack INSERT chains and the PUNCH sends, alongside Filter, Crush, Echo, and Plate Reverb.
+Limiter and TapeEmulation are now wired into both the per-rack INSERT chains and the PUNCH sends, alongside Filter, Crush, Echo, and Hall Reverb.
 
 ## Build
 
@@ -312,7 +312,7 @@ The Gradle task builds `desktopApp/native` with CMake and sets `java.library.pat
 
 This project is developed test-first where the code allows it.
 
-Native DSP and file parsing (62 GoogleTest cases):
+Native DSP and file parsing (64 GoogleTest cases):
 
 ```bash
 cmake -S app/src/test/cpp -B build/native-tests -DCMAKE_BUILD_TYPE=Debug
@@ -320,15 +320,17 @@ cmake --build build/native-tests -j
 ctest --test-dir build/native-tests --output-on-failure
 ```
 
-The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation, bypass and response curves, loop wrapping, crossfader law, auto-crossfade promotion, cancellation, tail clamping, and end behavior, BPM detection, spectrum band mapping, the per-rack FX bypass/filter/punch-tail behavior, serial punch limiter behavior, key-lock loop continuity, crossfader gain ramps, and the vendored YAWN time-stretcher/transient detector.
+The hall reverb is based on the public-domain Freeverb algorithm by Jezar at Dreampoint, with a stereo pre-delay and mapped room-size, damping, diffusion, width, and wet/dry controls.
 
-Shared Kotlin model tests (6 cases):
+The native suite covers WAV/AIFF parsing, truncation and wildcard cases, resampling, decoded PCM16 and mmap-backed tracks, scratch/jog behavior, key-lock tempo and reverse scratch, key lock at mismatched source rates, filter attenuation and bypass, EQ attenuation, bypass and response curves, loop wrapping, crossfader law, auto-crossfade promotion, cancellation, tail clamping, and end behavior, BPM and beat-offset detection, hall-reverb tail behavior, spectrum band mapping, the per-rack FX bypass/filter/punch-tail behavior, serial punch limiter behavior, key-lock loop continuity, crossfader gain ramps, and the vendored YAWN time-stretcher/transient detector.
+
+Shared Kotlin model tests (9 cases):
 
 ```bash
 ./gradlew :shared:desktopTest
 ```
 
-Covers waveform window sizing in seconds/beats, BPM fallback, playhead follow behavior, and short-track clamping.
+Covers waveform window sizing, BPM fallback, playhead follow behavior, short-track clamping, and beat-phase alignment.
 
 JVM unit tests (37 JUnit cases):
 
@@ -367,7 +369,7 @@ Both jobs pin JDK 17, Android SDK 36, and NDK `27.2.12479018`.
 ## Roadmap
 
 1. Extract the Compose deck UI into a shared `:ui` Compose Multiplatform module so Android and desktop run the exact same screen code.
-2. Full-library background analysis, beatgrid/downbeat detection, and phase-aligned SYNC.
+2. Full-library background analysis, bar/downbeat beatgrids, and beat-jump/quantized sync.
 3. FX presets and automation; embedded libav, JACK/PipeWire backend, and AppImage/Flatpak packaging.
 4. Disk-backed WAV/AIFF support and a cache-size/usage UI.
 5. Full media session and lock-screen/resume notification controls.

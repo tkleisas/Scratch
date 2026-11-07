@@ -41,7 +41,11 @@ class PlaybackService : Service() {
             return START_NOT_STICKY
         }
 
-        requestAudioFocus()
+        if (!requestAudioFocus()) {
+            controller.onAudioFocusDenied()
+            stopPlayback()
+            return START_NOT_STICKY
+        }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         } else {
@@ -59,8 +63,8 @@ class PlaybackService : Service() {
         super.onDestroy()
     }
 
-    private fun requestAudioFocus() {
-        if (focusRequest != null) return
+    private fun requestAudioFocus(): Boolean {
+        if (focusRequest != null) return true
         val manager = getSystemService(AudioManager::class.java)
         val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(
@@ -76,13 +80,14 @@ class PlaybackService : Service() {
                     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
                     -> {
                         controller.pauseAllForAudioFocus()
+                        controller.onAudioFocusLost()
                         stopPlayback()
                     }
                 }
             }
             .build()
         focusRequest = request
-        manager.requestAudioFocus(request)
+        return manager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     }
 
     private fun abandonAudioFocus() {
