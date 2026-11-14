@@ -8,6 +8,12 @@ object DjEngine {
     fun start(): Boolean = nativeStart()
     fun shutdown() = nativeShutdown()
     fun isRunning(): Boolean = nativeIsRunning()
+    fun linkSetEnabled(enabled: Boolean) = nativeLinkSetEnabled(enabled)
+    fun linkIsEnabled(): Boolean = nativeLinkIsEnabled()
+    fun linkPeers(): Int = nativeLinkPeers()
+    fun linkTempo(): Float = nativeLinkTempo()
+    fun linkPhase(): Float = nativeLinkPhase()
+    fun linkSetTempo(bpm: Float) = nativeLinkSetTempo(bpm)
     fun loadTrack(deck: Int, fd: Int): Boolean = nativeLoadTrack(deck, fd)
     fun loadPcm(deck: Int, pcm: ShortArray): Boolean = nativeLoadPcm(deck, pcm)
     fun loadPcmFile(deck: Int, path: String, sampleRate: Int): Boolean =
@@ -97,6 +103,12 @@ object DjEngine {
     private external fun nativeStart(): Boolean
     private external fun nativeShutdown()
     private external fun nativeIsRunning(): Boolean
+    private external fun nativeLinkSetEnabled(enabled: Boolean)
+    private external fun nativeLinkIsEnabled(): Boolean
+    private external fun nativeLinkPeers(): Int
+    private external fun nativeLinkTempo(): Float
+    private external fun nativeLinkPhase(): Float
+    private external fun nativeLinkSetTempo(bpm: Float)
     private external fun nativeLoadTrack(deck: Int, fd: Int): Boolean
     private external fun nativeLoadPcm(deck: Int, pcm: ShortArray): Boolean
     private external fun nativeLoadPcmFile(deck: Int, path: String, sampleRate: Int): Boolean

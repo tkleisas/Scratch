@@ -33,6 +33,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tkleisas.scratchdj.model.CrossfadeWaveformStyle
 import com.tkleisas.scratchdj.model.WaveformMode
 import com.tkleisas.scratchdj.ui.theme.ScratchSurfaceRaised
 import com.tkleisas.scratchdj.model.WaveformWindowMath
@@ -57,6 +58,7 @@ fun Waveform(
     ghostDurationMs: Long = 0L,
     crossfadeProgress: Float? = null,
     crossfadeWindowMs: Long = 0L,
+    crossfadeStyle: CrossfadeWaveformStyle = CrossfadeWaveformStyle.Sweep,
     modifier: Modifier = Modifier,
     onSeek: (Float) -> Unit,
     onToggleMode: () -> Unit,
@@ -106,6 +108,8 @@ fun Waveform(
     } else {
         1f
     }
+    val outgoingCenteredStart = progress - outgoingFadeFraction / 2f
+    val incomingCenteredStart = ghostProgress - incomingFadeFraction / 2f
     val currentMode by rememberUpdatedState(mode)
     val currentViewport by rememberUpdatedState(viewport)
     val currentOnSeek by rememberUpdatedState(onSeek)
@@ -160,6 +164,50 @@ fun Waveform(
 
                 val ghostData = ghostPeaks
                 if (crossfading && ghostData != null) {
+                    if (crossfadeStyle == CrossfadeWaveformStyle.Centered) {
+                        val outgoingPath = buildVisiblePath(
+                            peaks = peaks,
+                            loudest = loudest,
+                            startFraction = outgoingCenteredStart,
+                            fraction = outgoingFadeFraction,
+                            width = size.width,
+                            height = size.height,
+                        )
+                        val incomingPath = buildVisiblePath(
+                            peaks = ghostData,
+                            loudest = ghostLoudest,
+                            startFraction = incomingCenteredStart,
+                            fraction = incomingFadeFraction,
+                            width = size.width,
+                            height = size.height,
+                        )
+                        drawPath(
+                            incomingPath,
+                            accent.copy(alpha = crossfade * 0.92f),
+                        )
+                        drawPath(
+                            outgoingPath,
+                            accent.copy(alpha = (1f - crossfade) * 0.92f),
+                        )
+                        drawPath(
+                            outgoingPath,
+                            accent.copy(alpha = 0.24f * (1f - crossfade)),
+                            style = Stroke(width = 1.dp.toPx()),
+                        )
+                        drawPath(
+                            incomingPath,
+                            Color.White.copy(alpha = 0.32f * (1f - crossfade)),
+                            style = Stroke(width = 1.dp.toPx()),
+                        )
+                        val center = size.width / 2f
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.55f),
+                            start = Offset(center, 0f),
+                            end = Offset(center, size.height),
+                            strokeWidth = 1.5.dp.toPx(),
+                        )
+                        return@Canvas
+                    }
                     val fullView = mode == WaveformMode.Full
                     val outgoingPath = buildVisiblePath(
                         peaks = peaks,
@@ -346,7 +394,12 @@ fun Waveform(
             MiniMap(
                 fullPath = fullPath,
                 progress = progress,
-                windowStart = if (crossfading) outgoingFadeStart else viewport.startFraction,
+                windowStart = when {
+                    crossfading && crossfadeStyle == CrossfadeWaveformStyle.Centered ->
+                        outgoingCenteredStart
+                    crossfading -> outgoingFadeStart
+                    else -> viewport.startFraction
+                },
                 windowFraction = if (crossfading) outgoingFadeFraction else viewport.fraction,
                 accent = accent,
                 durationMs = durationMs,
@@ -421,13 +474,15 @@ private fun MiniMap(
         }) {
             drawPath(fullPath, accent.copy(alpha = 0.30f))
         }
-        val left = windowStart * size.width
-        val right = (windowStart + windowFraction).coerceAtMost(1f) * size.width
-        drawRect(
-            color = accent.copy(alpha = 0.12f),
-            topLeft = Offset(left, 0f),
-            size = Size((right - left).coerceAtLeast(1f), size.height),
-        )
+        val left = (windowStart * size.width).coerceIn(0f, size.width)
+        val right = ((windowStart + windowFraction) * size.width).coerceIn(0f, size.width)
+        if (right > left) {
+            drawRect(
+                color = accent.copy(alpha = 0.12f),
+                topLeft = Offset(left, 0f),
+                size = Size(right - left, size.height),
+            )
+        }
         drawLine(
             color = Color.White.copy(alpha = 0.6f),
             start = Offset(progress * size.width, 0f),

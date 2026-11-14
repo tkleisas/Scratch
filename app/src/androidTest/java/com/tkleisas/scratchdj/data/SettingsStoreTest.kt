@@ -3,6 +3,7 @@ package com.tkleisas.scratchdj.data
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.tkleisas.scratchdj.model.CrossfadeWaveformStyle
 import com.tkleisas.scratchdj.ui.theme.ScratchThemeName
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -30,6 +31,7 @@ class SettingsStoreTest {
         store.autoplayB = false
         store.crossfadeSeconds = 4.5f
         store.theme = ScratchThemeName.Midnight
+        store.crossfadeWaveformStyle = CrossfadeWaveformStyle.Centered
 
         val reopened = SettingsStore(context, TEST_PREFS)
 
@@ -37,6 +39,7 @@ class SettingsStoreTest {
         assertFalse(reopened.autoplayB)
         assertEquals(4.5f, reopened.crossfadeSeconds, 1e-6f)
         assertEquals(ScratchThemeName.Midnight, reopened.theme)
+        assertEquals(CrossfadeWaveformStyle.Centered, reopened.crossfadeWaveformStyle)
     }
 
     private companion object {

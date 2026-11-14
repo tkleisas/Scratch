@@ -45,9 +45,9 @@ This is an early development build, exercised on a physical Android 15 device an
 - Tempo reset: tap the `0` next to SYNC to return pitch to 0% instantly.
 - Looping: one-tap LOOP creates and enables a 4-second loop at the playhead. IN sets the loop start without engaging the loop; OUT sets the end and starts looping. CLR clears. A pending IN point is drawn on the waveform. Key-locked playback wraps the stretcher source at the loop seam instead of resetting it, so loops stay continuous.
 - Cue points and four hot cues per deck: CUE sets or jumps and pauses; hot-cue pads set empty slots or jump and play; long-press clears. Cues reset on track load and are session-only. SLIP mode makes platter scratches return to where playback would have reached on release.
-- Auto-crossfade: with Autoplay on and a next track in the deck queue, the next track is prepared ahead and fades in on the same deck over the configured duration. During the overlap, a temporary waveform window spans the crossfade: the outgoing track fades to an outline while the incoming track goes from a dashed outline to solid. Loading, NEXT/PREV, seeking, scratching, looping, pausing, or disabling Autoplay cancels the pending transition.
+- Auto-crossfade: with Autoplay on and a next track in the deck queue, the next track is prepared ahead and fades in on the same deck over the configured duration. During the overlap, the selected crossfade waveform style either sweeps through the transition or scrolls both tracks under one fixed playhead while the layers fade. Loading, NEXT/PREV, seeking, scratching, looping, pausing, or disabling Autoplay cancels the pending transition.
 - Per-rack FX: Deck A, Deck B, and Master each have an **FX** button in their header (the master button is in the mixer header), an ordered **INSERT** chain, and seven independent **PUNCH** sends. Effects are Filter, Crush, echo, hall reverb, tape emulation, compressor, and limiter. Each rack has an FX overlay with INSERT/PUNCH tabs, up/down ordering, enable/disable, full parameters, and automatic persistence. Punch pads sit below each platter and in the master mixer; they support hold and latch modes, and echo/reverb tails continue after release. Insert chains run post-fader so tails survive crossfader moves. Echo tempo sync follows the effective BPM of its rack's deck (the master rack follows the active crossfader side).
-- Waveforms computed from 8192 peak buckets at load and normalized for display. Two global views: **FULL** shows the whole track; **SCROLL** follows the playhead in a zoomed window with a whole-track minimap. Tap or drag either waveform to seek, and tap the **FULL/SCROLL** pill to switch views. The scrolling window is configured in seconds or beats and follows each deck's effective BPM.
+- Waveforms computed from 8192 peak buckets at load and normalized for display. Two global views: **FULL** shows the whole track; **SCROLL** follows the playhead in a zoomed window with a whole-track minimap. Tap or drag either waveform to seek, and tap the **FULL/SCROLL** pill to switch views. The scrolling window is configured in seconds or beats and follows each deck's effective BPM. The crossfade waveform can use a **Sweeping** transition (one playhead moves through the overlap) or a **Centered** transition (both waveforms scroll under a fixed playhead while they fade), selectable in Settings for A/B comparison.
 - Local library indexed into SQLite, with case-insensitive title/artist/album search and escaped SQL wildcards. Search results load in pages of 100 with the next page prefetched near the bottom; the header shows the full result count.
 - Per-deck queue rows can be reordered with a drag handle or up/down buttons while the current-track cursor follows the track. Opening a queue scrolls to the currently loaded track.
 - The next queued track is shown in each deck’s queue bar and updates when the queue cursor changes, including at the end of the queue.
@@ -67,6 +67,7 @@ This is an early development build, exercised on a physical Android 15 device an
 - Library folders are configurable in **Settings → Library Folders** and persisted with `java.util.prefs`; the default is `~/Music`.
 - Desktop EQ and queue presets persist in `~/.config/scratch/presets.bin`.
 - Debian and Windows MSI packages build with the native engine bundled into app resources and extracted/loaded at runtime; an AppImage target is configured but not yet exercised in CI.
+- Optional **Ableton Link** support on Android, Linux, and Windows: enable it in Settings, join a local Link session, follow session tempo, and use a deck's SYNC button to align its detected beat phase to the Link session. Link is off by default and uses local-network discovery only; it does not send music or library data off the device.
 
 ![Desktop library folder settings](docs/desktop-settings.png)
 
@@ -117,6 +118,7 @@ Play Store copy, data-safety answers, and upload-ready graphics are in
 | SETTINGS | Appearance theme, Autoplay A/B, auto-crossfade, and waveform settings; on desktop, also library folders. Persisted across launches. |
 | TEMPO | 50%–200% playback rate. Tap `0` to reset to 0%. |
 | SYNC | Match the other deck’s effective BPM, analyze BPM/beat offset on demand, align the nearest beat phase, and enable key lock. |
+| Crossfade waveform | In Settings, choose SWEEP or CENTERED for the ghost waveform handoff. |
 | KEY | Enables WSOLA key lock; tempo changes no longer repitch. |
 | VOL A / VOL B | Per-deck output volume (0%–150%). |
 | IN | Set the loop start at the current playhead without starting the loop. |
@@ -201,6 +203,7 @@ The `app/src/main/cpp/third_party/yawn/` directory contains code copied from [YA
 - `audio/Oversampling.h` — 2× oversampling used by the nonlinear effects.
 - `effects/Biquad.h` — reusable biquad used by EQ, filters, and effects.
 - `effects/Filter.*`, `effects/Delay.*`, `effects/HallReverb.*`, `effects/TapeEmulation.*`, `effects/Compressor.*`, `effects/Limiter.*` — the FX processors.
+- Ableton Link is fetched by CMake for Android and desktop builds. Link is dual-licensed GPLv2+ or proprietary; Scratch uses the GPLv2+ option. Link networking is local-LAN only and the setting is off by default.
 - `effects/Bitcrusher.h`, `effects/FreqMap.h` — crusher and log-frequency helpers.
 - `effects/AudioEffect.h`, `core/ParameterInfo.h`, `core/WidgetHint.h` — minimal compatibility shims replacing YAWN's DAW/UI effect base.
 - `LICENSE.txt` — YAWN's MIT license.
@@ -396,7 +399,7 @@ git push origin v0.1.1
 
 ## Privacy
 
-Scratch is local-first. The Android app does not collect, transmit, sell, or share personal data and has no network permission. Library metadata, settings, FX state, and decoded PCM caches stay on the device. The public policy for the Android release is at <https://tkleisas.github.io/scratch/privacy/>.
+Scratch is local-first. The Android app does not collect, transmit, sell, or share personal data. Android declares network permissions only for the optional Ableton Link setting, which uses local-network discovery when enabled and is off by default; no music or library data is uploaded. Library metadata, settings, FX state, and decoded PCM caches stay on the device. The public policy for the Android release is at <https://tkleisas.github.io/scratch/privacy/>.
 
 ## License
 

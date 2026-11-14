@@ -204,6 +204,7 @@ fun DeckPanel(
                 ghostDurationMs = crossfadeGhost?.durationMs ?: 0L,
                 crossfadeProgress = crossfadeGhost?.progress,
                 crossfadeWindowMs = crossfadeGhost?.windowMs ?: 0L,
+                crossfadeStyle = controller.crossfadeWaveformStyle.value,
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 onSeek = { controller.seekFraction(side, it) },
                 onToggleMode = { controller.toggleWaveformMode() },

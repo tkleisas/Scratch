@@ -14,12 +14,14 @@
 #endif
 #include "audio/BpmAnalyzer.h"
 #include "audio/TrackLoader.h"
+#include "link/LinkSync.h"
 
 namespace {
 
 std::mutex gEngineMutex;
 std::unique_ptr<AudioEngine> gEngine;
 std::string gLastError;
+std::unique_ptr<LinkSync> gLinkSync;
 
 
 bool ValidDeck(jint deck) {
@@ -104,6 +106,9 @@ Java_com_tkleisas_scratchdj_audio_DjEngine_nativeStart(JNIEnv*, jobject) {
         return JNI_FALSE;
     }
     gEngine = std::move(engine);
+    if (!gLinkSync) {
+        gLinkSync = std::make_unique<LinkSync>();
+    }
     gLastError.clear();
     return JNI_TRUE;
 }
@@ -111,6 +116,7 @@ Java_com_tkleisas_scratchdj_audio_DjEngine_nativeStart(JNIEnv*, jobject) {
 JNIEXPORT void JNICALL
 Java_com_tkleisas_scratchdj_audio_DjEngine_nativeShutdown(JNIEnv*, jobject) {
     std::lock_guard<std::mutex> lock(gEngineMutex);
+    gLinkSync.reset();
     gEngine.reset();
 }
 
@@ -327,6 +333,41 @@ Java_com_tkleisas_scratchdj_audio_DjEngine_nativeConsumeAudioError(JNIEnv* env, 
         }
     }
     return error.empty() ? nullptr : ToJavaString(env, error);
+}
+
+JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeLinkSetEnabled(
+    JNIEnv*, jobject, jboolean enabled) {
+    if (gLinkSync) {
+        gLinkSync->SetEnabled(enabled == JNI_TRUE);
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeLinkIsEnabled(JNIEnv*, jobject) {
+    return gLinkSync && gLinkSync->IsEnabled() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeLinkPeers(JNIEnv*, jobject) {
+    return gLinkSync ? static_cast<jint>(gLinkSync->PeerCount()) : 0;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeLinkTempo(JNIEnv*, jobject) {
+    return gLinkSync ? static_cast<jfloat>(gLinkSync->Tempo()) : 0.0f;
+}
+
+JNIEXPORT jfloat JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeLinkPhase(JNIEnv*, jobject) {
+    return gLinkSync ? static_cast<jfloat>(gLinkSync->Phase()) : 0.0f;
+}
+
+JNIEXPORT void JNICALL
+Java_com_tkleisas_scratchdj_audio_DjEngine_nativeLinkSetTempo(JNIEnv*, jobject, jfloat bpm) {
+    if (gLinkSync) {
+        gLinkSync->SetTempo(bpm);
+    }
 }
 
 JNIEXPORT jlong JNICALL

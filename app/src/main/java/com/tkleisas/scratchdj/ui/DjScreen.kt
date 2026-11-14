@@ -234,6 +234,15 @@ private fun TopBar(
             fontSize = 9.sp,
             fontFamily = FontFamily.Monospace,
         )
+        if (controller.linkEnabled.value) {
+            Text(
+                text = "LINK · ${controller.linkPeers.intValue} peers · " +
+                    String.format(java.util.Locale.US, "%.1f BPM", controller.linkTempo.floatValue),
+                color = DeckAccentA,
+                fontSize = 8.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
         if (controller.isSyncing.value) {
             CircularProgressIndicator(
                 modifier = Modifier.size(12.dp),

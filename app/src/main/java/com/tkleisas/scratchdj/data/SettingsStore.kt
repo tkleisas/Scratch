@@ -1,6 +1,7 @@
 package com.tkleisas.scratchdj.data
 
 import android.content.Context
+import com.tkleisas.scratchdj.model.CrossfadeWaveformStyle
 import com.tkleisas.scratchdj.model.WaveformMode
 import com.tkleisas.scratchdj.ui.theme.ScratchThemeName
 import com.tkleisas.scratchdj.model.WaveformWindowMath
@@ -40,6 +41,25 @@ class SettingsStore(
         }.getOrDefault(ScratchThemeName.Classic)
         set(value) {
             preferences.edit().putString("theme", value.name).apply()
+        }
+
+    var linkEnabled: Boolean
+        get() = preferences.getBoolean("link_enabled", false)
+        set(value) {
+            preferences.edit().putBoolean("link_enabled", value).apply()
+        }
+
+    var crossfadeWaveformStyle: CrossfadeWaveformStyle
+        get() = runCatching {
+            CrossfadeWaveformStyle.valueOf(
+                preferences.getString(
+                    "crossfade_waveform_style",
+                    CrossfadeWaveformStyle.Sweep.name,
+                ) ?: CrossfadeWaveformStyle.Sweep.name,
+            )
+        }.getOrDefault(CrossfadeWaveformStyle.Sweep)
+        set(value) {
+            preferences.edit().putString("crossfade_waveform_style", value.name).apply()
         }
 
     var waveformMode: WaveformMode

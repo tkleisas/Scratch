@@ -7,7 +7,7 @@ Use these answers in Play Console → App content → Data safety.
 - **Do you provide a way for users to request that their data is deleted?** Not applicable — no data is collected. Local app data can be removed by clearing app storage or uninstalling.
 - **Data types collected:** None.
 - **Data types shared:** None.
-- **Data processed ephemerally:** Local audio library, queue, EQ/FX state and PCM cache are processed on-device only. They are not sent off-device by Scratch.
+- **Data processed ephemerally:** Local audio library, queue, EQ/FX state and PCM cache are processed on-device only. They are not sent off-device by Scratch. When Ableton Link is explicitly enabled, Link exchanges timing/session state with other Link apps on the local network; it does not send library metadata or audio.
 - **Ads:** No.
 - **In-app purchases:** No.
 - **Account creation:** No.
@@ -17,7 +17,8 @@ Use these answers in Play Console → App content → Data safety.
 
 - `READ_MEDIA_AUDIO` (Android 13+): read local audio files chosen for playback.
 - `READ_EXTERNAL_STORAGE` (Android 12 and below): read local audio files for playback.
-- No internet, location, camera, microphone, contacts or photo permissions.
+- `INTERNET`, `ACCESS_NETWORK_STATE`, `CHANGE_WIFI_MULTICAST_STATE`: used only for the optional Ableton Link setting, which discovers other Link apps on the local network. Link is off by default. No music, library metadata, or personal data is uploaded.
+- No location, camera, microphone, contacts or photo permissions.
 
 ## Store declarations
 

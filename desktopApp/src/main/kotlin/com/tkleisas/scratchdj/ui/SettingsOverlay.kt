@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.tkleisas.scratchdj.desktop.AppInfo
 import com.tkleisas.scratchdj.desktop.FileDialogs
 import com.tkleisas.scratchdj.DjController
+import com.tkleisas.scratchdj.model.CrossfadeWaveformStyle
 import com.tkleisas.scratchdj.model.DeckSide
 import com.tkleisas.scratchdj.model.WaveformMode
 import com.tkleisas.scratchdj.model.WaveformWindowMath
@@ -182,6 +183,121 @@ fun SettingsOverlay(controller: DjController, onDismiss: () -> Unit) {
                         color = ScratchOutline,
                         fontSize = 9.sp,
                     )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        text = "Crossfade waveform",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CrossfadeStyleChip(
+                            label = "SWEEP",
+                            selected = controller.crossfadeWaveformStyle.value ==
+                                CrossfadeWaveformStyle.Sweep,
+                            accent = DeckAccentA,
+                            onClick = {
+                                controller.setCrossfadeWaveformStyle(
+                                    CrossfadeWaveformStyle.Sweep,
+                                )
+                            },
+                        )
+                        CrossfadeStyleChip(
+                            label = "CENTERED",
+                            selected = controller.crossfadeWaveformStyle.value ==
+                                CrossfadeWaveformStyle.Centered,
+                            accent = DeckAccentA,
+                            onClick = {
+                                controller.setCrossfadeWaveformStyle(
+                                    CrossfadeWaveformStyle.Centered,
+                                )
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = if (controller.crossfadeWaveformStyle.value ==
+                            CrossfadeWaveformStyle.Centered
+                        ) {
+                            "Both waveforms scroll beneath one fixed playhead while they fade."
+                        } else {
+                            "One playhead sweeps across the outgoing tail and incoming head."
+                        },
+                        color = ScratchOutline,
+                        fontSize = 9.sp,
+                    )
+                }
+
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    text = "ABLETON LINK",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 2.sp,
+                )
+                Spacer(Modifier.height(6.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(ScratchSurfaceRaised, RoundedCornerShape(10.dp))
+                        .padding(14.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Ableton Link",
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                text = "Sync tempo and phase with other Link apps on your local network",
+                                color = ScratchOutline,
+                                fontSize = 9.sp,
+                            )
+                        }
+                        Switch(
+                            checked = controller.linkEnabled.value,
+                            onCheckedChange = { controller.setLinkEnabled(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = ScratchOnAccent,
+                                checkedTrackColor = DeckAccentA,
+                            ),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    if (controller.linkEnabled.value) {
+                        Text(
+                            text = String.format(
+                                java.util.Locale.US,
+                                "%d peers · %.1f BPM · %.0f%% phase",
+                                controller.linkPeers.intValue,
+                                controller.linkTempo.floatValue,
+                                controller.linkPhase.floatValue * 100f,
+                            ),
+                            color = DeckAccentA,
+                            fontSize = 10.sp,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        )
+                        Text(
+                            text = "SYNC on a deck aligns it to the Link session. Start/stop " +
+                                "transport sync is not enabled.",
+                            color = ScratchOutline,
+                            fontSize = 9.sp,
+                        )
+                    } else {
+                        Text(
+                            text = "Off by default. Link uses local-network discovery only; " +
+                                "Scratch does not send your music or library off the device.",
+                            color = ScratchOutline,
+                            fontSize = 9.sp,
+                        )
+                    }
                 }
 
                 Spacer(Modifier.height(18.dp))
@@ -265,6 +381,33 @@ fun SettingsOverlay(controller: DjController, onDismiss: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun CrossfadeStyleChip(
+    label: String,
+    selected: Boolean,
+    accent: Color,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .height(24.dp)
+            .background(
+                if (selected) accent.copy(alpha = 0.2f) else ScratchSurfaceRaised,
+                RoundedCornerShape(5.dp),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = if (selected) accent else ScratchOutline,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 

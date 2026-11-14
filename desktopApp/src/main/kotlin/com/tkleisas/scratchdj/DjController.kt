@@ -17,6 +17,7 @@ import com.tkleisas.scratchdj.data.Track
 import com.tkleisas.scratchdj.desktop.DesktopPcmCache
 import com.tkleisas.scratchdj.desktop.DesktopSessionStore
 import com.tkleisas.scratchdj.desktop.DesktopPresetStore
+import com.tkleisas.scratchdj.model.CrossfadeWaveformStyle
 import com.tkleisas.scratchdj.model.DeckSide
 import com.tkleisas.scratchdj.model.DeckUiState
 import com.tkleisas.scratchdj.model.EqPreset
@@ -112,6 +113,21 @@ class DjController {
             )
         }.getOrDefault(ScratchThemeName.Classic),
     )
+    val linkEnabled = mutableStateOf(preferences.getBoolean("link_enabled", false))
+    val linkPeers = mutableIntStateOf(0)
+    val linkTempo = mutableFloatStateOf(0f)
+    val linkPhase = mutableFloatStateOf(0f)
+
+    val crossfadeWaveformStyle = mutableStateOf(
+        runCatching {
+            CrossfadeWaveformStyle.valueOf(
+                preferences.get(
+                    "crossfade_waveform_style",
+                    CrossfadeWaveformStyle.Sweep.name,
+                ),
+            )
+        }.getOrDefault(CrossfadeWaveformStyle.Sweep),
+    )
     val waveformMode = mutableStateOf(
         runCatching {
             WaveformMode.valueOf(
@@ -141,6 +157,9 @@ class DjController {
             message.value = DjEngine.lastError().ifBlank { "Audio engine failed to start" }
         }
         DjEngine.setCrossfader(crossfader.value)
+        if (linkEnabled.value) {
+            DjEngine.linkSetEnabled(true)
+        }
         applyFxState()
         updateFxTempo()
         restoreLastTracks()
@@ -783,6 +802,7 @@ class DjController {
             manageCrossfade(DeckSide.B)
             updateCrossfadeGhost(DeckSide.A)
             updateCrossfadeGhost(DeckSide.B)
+            updateLink()
 
             if (DjEngine.consumeEnded(DeckSide.A.index)) {
                 if (!autoplayA.value || !advanceQueue(DeckSide.A)) {
@@ -898,7 +918,114 @@ class DjController {
         DjEngine.setKeyLock(side.index, enabled)
     }
 
+    private fun updateLink() {
+        if (!linkEnabled.value) return
+        linkPeers.intValue = DjEngine.linkPeers()
+        val tempo = DjEngine.linkTempo()
+        linkTempo.floatValue = tempo
+        linkPhase.floatValue = DjEngine.linkPhase()
+        if (tempo <= 0f) return
+        for (side in listOf(DeckSide.A, DeckSide.B)) {
+            val state = deck(side).value
+            if (state.track == null || state.bpm <= 0f) continue
+            val ratio = (tempo / state.bpm).coerceIn(0.5f, 2.0f)
+            if (kotlin.math.abs(state.tempo - ratio) > 0.001f) {
+                setTempo(side, ratio)
+            }
+        }
+    }
+
+    fun setLinkEnabled(enabled: Boolean) {
+        linkEnabled.value = enabled
+        preferences.putBoolean("link_enabled", enabled)
+        if (enabled) {
+            val seed = deckA.value.bpm.takeIf { it > 0f }
+                ?: deckB.value.bpm.takeIf { it > 0f }
+            if (seed != null) {
+                DjEngine.linkSetTempo(seed)
+            }
+            DjEngine.linkSetEnabled(true)
+            linkTempo.floatValue = DjEngine.linkTempo()
+            linkPhase.floatValue = DjEngine.linkPhase()
+        } else {
+            DjEngine.linkSetEnabled(false)
+            linkPeers.intValue = 0
+            linkTempo.floatValue = 0f
+            linkPhase.floatValue = 0f
+        }
+    }
+
+    private fun syncToLink(side: DeckSide) {
+        val state = deck(side).value
+        val track = state.track
+        if (track == null || state.durationMs <= 1L) {
+            message.value = "Load a track to sync with Link"
+            return
+        }
+        val target = DjEngine.linkTempo()
+        if (target <= 0f) {
+            message.value = "Ableton Link is not available"
+            return
+        }
+        message.value = "Analyzing BPM and beat grid for Link…"
+        scope.launch {
+            var bpm = state.bpm
+            var offset = state.beatOffsetMs
+            if (bpm <= 0f) {
+                bpm = withContext(Dispatchers.IO) {
+                    DjEngine.analyzeBpm(side.index, state.durationMs)
+                }
+            }
+            if (offset == null && bpm > 0f) {
+                offset = withContext(Dispatchers.IO) {
+                    DjEngine.analyzeBeatOffset(side.index, state.durationMs, bpm)
+                }
+            }
+            if (!linkEnabled.value) {
+                message.value = "Ableton Link was disabled"
+                return@launch
+            }
+            val holder = deck(side)
+            if (holder.value.track?.id == track.id) {
+                holder.value = holder.value.copy(bpm = bpm, beatOffsetMs = offset)
+            }
+            if (bpm <= 0f) {
+                message.value = "Could not detect BPM for Link sync"
+                return@launch
+            }
+            val linkTempoNow = DjEngine.linkTempo()
+            val ratio = SyncMath.tempoRatio(bpm, linkTempoNow)
+            if (ratio == null) {
+                message.value = "Link tempo is outside the deck tempo range"
+                return@launch
+            }
+            setTempo(side, ratio)
+            if (!state.keyLock) toggleKeyLock(side)
+            val phase = DjEngine.linkPhase()
+            val aligned = BeatSyncMath.alignedPositionMs(
+                positionMs = DjEngine.positionMs(side.index),
+                offsetMs = offset ?: 0f,
+                bpm = bpm,
+                targetPhase = phase,
+                durationMs = state.durationMs,
+            )
+            if (aligned != null) {
+                DjEngine.seekFraction(
+                    side.index,
+                    aligned.toFloat() / state.durationMs.toFloat(),
+                )
+                deck(side).value = deck(side).value.copy(positionMs = aligned)
+            }
+            message.value = "Deck ${side.letter} synced to Ableton Link · " +
+                String.format(Locale.US, "%.1f", linkTempoNow) + " BPM"
+        }
+    }
+
     fun syncToOtherDeck(side: DeckSide) {
+        if (linkEnabled.value) {
+            syncToLink(side)
+            return
+        }
         val state = deck(side).value
         val other = deck(side.other()).value
         if (state.track == null || other.track == null) {
@@ -1215,6 +1342,11 @@ class DjController {
     fun setTheme(value: ScratchThemeName) {
         theme.value = value
         preferences.put("theme", value.name)
+    }
+
+    fun setCrossfadeWaveformStyle(value: CrossfadeWaveformStyle) {
+        crossfadeWaveformStyle.value = value
+        preferences.put("crossfade_waveform_style", value.name)
     }
 
     fun toggleWaveformMode() {

@@ -5,6 +5,20 @@ project(scratchdj_desktop LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include(FetchContent)
+FetchContent_Declare(
+    ableton_link
+    GIT_REPOSITORY https://github.com/Ableton/link.git
+    GIT_TAG        5ba907ae027a8c2ec8824463e37296dcefc5e9be
+    GIT_SHALLOW    FALSE
+    GIT_SUBMODULES "modules/asio-standalone"
+    GIT_SUBMODULES_RECURSE FALSE)
+FetchContent_GetProperties(ableton_link)
+if(NOT ableton_link_POPULATED)
+    FetchContent_Populate(ableton_link)
+endif()
+include(${ableton_link_SOURCE_DIR}/AbletonLinkConfig.cmake)
+
 if(NOT JAVA_INCLUDE_PATH)
     set(JAVA_INCLUDE_PATH "$ENV{JAVA_HOME}/include")
 endif()
@@ -41,6 +55,7 @@ add_library(scratchdj SHARED
     "${APP_CPP}/third_party/yawn/effects/TapeEmulation.cpp"
     "${APP_CPP}/third_party/yawn/effects/Compressor.cpp"
     "${APP_CPP}/third_party/yawn/effects/Limiter.cpp"
+    "${APP_CPP}/link/LinkSync.cpp"
     ${DESKTOP_AUDIO_SOURCE})
 
 if(WIN32)
@@ -68,6 +83,8 @@ else()
 endif()
 
 target_compile_definitions(scratchdj PRIVATE SCRATCH_DESKTOP_AUDIO)
+target_link_libraries(scratchdj PRIVATE Ableton::Link)
+link_pin_win32_winnt(scratchdj)
 if(WIN32)
     target_compile_definitions(scratchdj PRIVATE NOMINMAX)
     target_compile_options(scratchdj PRIVATE /O2 /fp:fast /W3 /EHsc /utf-8)
